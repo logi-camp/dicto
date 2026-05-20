@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Dicto
+GenericName=Dictionary
+Comment=Look up words in MDX dictionary files
+Exec=dicto
+Icon=dicto
+Terminal=false
+Categories=Education;Office;Dictionary;
+Keywords=dictionary;mdx;mdict;lookup;words;
+StartupNotify=true

@@ -1,0 +1,37 @@
+[workspace]
+members = [".", "gpui"]
+
+[package]
+name = "mdict-rs"
+version = "0.1.4"
+authors = ["Mohammadreza Khani"]
+edition = "2024"
+license = "AGPL-3.0-or-later"
+
+[lib]
+name = "mdict_rs"
+path = "src/lib.rs"
+
+[[bin]]
+name = "mdict-rs"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+serde_derive = "1"
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+encoding = "0.2"
+adler32 = "1"
+redb = "2"
+flate2 = { version = "1", features = ["zlib"], default-features = false }
+rand = "0.9"
+rust-lzo = "0.6"
+ripemd = "0.1"
+axum = "0.8"
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+tower-http = { version = "0.6", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+dirs = "6"
+memmap2 = "0.9.10"

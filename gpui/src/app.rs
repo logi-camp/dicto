@@ -1,0 +1,276 @@
+use std::time::Duration;
+
+use gpui::{
+    div, px, AppContext as _, Context, Entity, FontWeight, InteractiveElement, IntoElement,
+    ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Window,
+};
+use gpui_component::{
+    dialog::DialogButtonProps,
+    h_flex,
+    input::InputState,
+    v_flex, Root, TitleBar, WindowExt,
+};
+
+use crate::colors;
+use crate::components::{
+    detail_panel,
+    search_bar::{self, SearchBarProps},
+    settings_panel,
+    word_list::{self, WordListProps},
+};
+use crate::state::{DictResult, DictState};
+
+pub struct DictApp {
+    pub state: Entity<DictState>,
+    input: Entity<InputState>,
+}
+
+impl DictApp {
+    pub fn new(state: Entity<DictState>, window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let input = cx.new(|cx| {
+            let mut s = InputState::new(window, cx);
+            s.set_placeholder("Search words...", window, cx);
+            s
+        });
+
+        let dict_state = state.clone();
+        cx.observe(&input, move |this: &mut DictApp, input, cx| {
+            let text = input.read(cx).value().to_string();
+            if text.is_empty() {
+                cx.update_entity(&this.state, |s, cx| {
+                    s.suggestions.clear();
+                    s.selected_suggestion = None;
+                    cx.notify();
+                });
+                return;
+            }
+
+            let dict_state = dict_state.clone();
+            cx.spawn(async move |_this, cx| {
+                cx.background_executor()
+                    .timer(Duration::from_millis(150))
+                    .await;
+
+                let q = text.clone();
+                let suggestions = cx
+                    .background_executor()
+                    .spawn(async move { mdict_rs::query::search_suggestions(&q, 50) })
+                    .await;
+
+                cx.update_entity(&dict_state, |s, cx| {
+                    s.suggestions = suggestions;
+                    s.selected_suggestion = None;
+                    cx.notify();
+                });
+            })
+            .detach();
+        })
+        .detach();
+
+        Self { state, input }
+    }
+
+    pub fn lookup_word(&mut self, word: String, cx: &mut Context<Self>) {
+        if word.is_empty() {
+            return;
+        }
+
+        cx.update_entity(&self.state, |s, cx| {
+            s.result_word = Some(word.clone());
+            s.results.clear();
+            s.active_result = 0;
+            s.is_searching = true;
+            cx.notify();
+        });
+
+        let dict_state = self.state.clone();
+        cx.spawn(async move |_this, cx| {
+            let q = word.clone();
+            let results = cx
+                .background_executor()
+                .spawn(async move {
+                    mdict_rs::query::query_all(&q)
+                        .into_iter()
+                        .map(|hit| {
+                            let blocks = crate::html::parse_styled(&hit.definition, &hit.name);
+                            DictResult { name: hit.name, blocks }
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .await;
+
+            cx.update_entity(&dict_state, |s, cx| {
+                s.is_searching = false;
+                s.results = results;
+                s.active_result = 0;
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+}
+
+impl Render for DictApp {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // Root keeps active dialogs in a list, but doesn't render them
+        // automatically — we have to append the dialog layer as a
+        // sibling of the main view ourselves.
+        let dialog_layer = Root::render_dialog_layer(window, cx);
+
+        let main = v_flex()
+            .size_full()
+            .bg(colors::bg())
+            .child(
+                TitleBar::new()
+                    .on_close_window(|_, window, _| {
+                        window.remove_window();
+                    })
+                    .child(
+                        div()
+                            .text_size(px(13.))
+                            .font_weight(FontWeight::BOLD)
+                            .text_color(colors::primary())
+                            .child("Dicto"),
+                    ),
+            )
+            // Search row hosts the cog on its right edge so the button
+            // sits outside the title bar's OS-claimed drag region.
+            .child(search_bar::search_bar(
+                SearchBarProps {
+                    input: self.input.clone(),
+                    state: self.state.clone(),
+                    right_slot: Some(cog_button(self.state.clone())),
+                },
+                cx,
+            ))
+            .child(indexing_bar(&self.state, cx))
+            .child(
+                h_flex()
+                    .flex_1()
+                    .min_h(px(0.))
+                    .w_full()
+                    .child(word_list::word_list(
+                        WordListProps { state: self.state.clone() },
+                        cx,
+                    ))
+                    .child(detail_panel::detail_panel(self.state.clone(), cx)),
+            );
+
+        div()
+            .size_full()
+            .child(main)
+            .children(dialog_layer)
+            .into_any_element()
+    }
+}
+
+/// Slim progress bar shown while background indexing is running.
+/// Returns an empty fragment when `indexing_total == 0` so we don't
+/// reserve vertical space in the idle state.
+fn indexing_bar(state: &Entity<DictState>, cx: &Context<DictApp>) -> gpui::AnyElement {
+    let s = state.read(cx);
+    if s.indexing_total == 0 {
+        return div().into_any_element();
+    }
+
+    let done = s.indexing_done;
+    let total = s.indexing_total;
+    let pct = if total == 0 { 0.0 } else { (done as f32 / total as f32).clamp(0.0, 1.0) };
+    let label = match &s.indexing_current {
+        Some(name) => format!("Indexing {done}/{total} — {name}"),
+        None => format!("Indexing {done}/{total}"),
+    };
+
+    v_flex()
+        .w_full()
+        .px(px(12.))
+        .py(px(6.))
+        .gap(px(4.))
+        .bg(colors::surface())
+        .border_b_1()
+        .border_color(colors::border())
+        .child(
+            div()
+                .text_size(px(11.))
+                .text_color(colors::text_secondary())
+                .child(SharedString::from(label)),
+        )
+        .child(
+            div()
+                .w_full()
+                .h(px(4.))
+                .rounded(px(2.))
+                .bg(colors::border())
+                .child(
+                    div()
+                        .h(px(4.))
+                        .rounded(px(2.))
+                        .bg(colors::primary())
+                        .w(gpui::relative(pct)),
+                ),
+        )
+        .into_any_element()
+}
+
+/// Cog button. Stateful so it gets its own hit-test region, with an
+/// `on_click` that calls `window.open_dialog` directly. We can't use
+/// `Dialog::trigger` here: the titlebar already owns a mouse_down
+/// listener for window-drag, and the wrapper Dialog inserts swallows
+/// the click before our config is applied.
+fn cog_button(state: Entity<DictState>) -> gpui::AnyElement {
+    div()
+        .id("cog-settings-btn")
+        .px(px(10.))
+        .py(px(4.))
+        .mr(px(8.))
+        .rounded(px(6.))
+        .text_size(px(12.))
+        .text_color(colors::text())
+        .bg(colors::bg())
+        .border_1()
+        .border_color(colors::border())
+        .cursor_pointer()
+        .hover(|s| s.bg(colors::surface()))
+        .child(SharedString::from("⚙ Settings"))
+        .on_click(move |_, window, cx| {
+            let content_state = state.clone();
+            let save_state = state.clone();
+            let cancel_state = state.clone();
+            window.open_dialog(cx, move |dialog, _, _| {
+                let content_state = content_state.clone();
+                let save_state = save_state.clone();
+                let cancel_state = cancel_state.clone();
+                dialog
+                    .title("Dictionaries")
+                    .w(px(560.))
+                    .content(move |content, window, cx| {
+                        settings_panel::dialog_content(
+                            content_state.clone(),
+                            content,
+                            window,
+                            cx,
+                        )
+                    })
+                    .button_props(
+                        DialogButtonProps::default()
+                            .ok_text("Save")
+                            .cancel_text("Cancel"),
+                    )
+                    .on_ok({
+                        let save_state = save_state.clone();
+                        move |_, _, cx| {
+                            settings_panel::apply_save(&save_state, cx);
+                            true
+                        }
+                    })
+                    .on_cancel({
+                        let cancel_state = cancel_state.clone();
+                        move |_, _, cx| {
+                            settings_panel::revert(&cancel_state, cx);
+                            true
+                        }
+                    })
+            });
+        })
+        .into_any_element()
+}

@@ -1,0 +1,53 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    steps:
+      - name: Install dependencies
+        run: |
+          pacman -Syu --noconfirm
+          pacman -S --noconfirm base-devel git gtk3 alsa-lib libxkbcommon libxkbcommon-x11 xdotool clang pkgconf
+
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Build
+        run: cargo build --release --package dicto
+
+      - name: Package release tarball
+        run: |
+          mkdir -p dist
+          cp target/release/dicto dist/
+          cp packaging/arch/dicto.desktop dist/
+          cp assets/icon.svg dist/
+          cp LICENSE dist/
+          cd dist
+          tar czf ../dicto-${{ github.ref_name }}-x86_64-unknown-linux-gnu.tar.gz \
+            dicto dicto.desktop icon.svg LICENSE
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dicto-x86_64
+          path: dicto-*.tar.gz
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*.tar.gz

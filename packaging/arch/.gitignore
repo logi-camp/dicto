@@ -1,0 +1,8 @@
+/pkg/
+/src/
+/mdict-rs/
+/*.pkg.tar*
+/*.pkg.tar.zst
+/*.src.tar*
+/*.src.tar.gz
+/*.src.tar.zst

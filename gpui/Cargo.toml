@@ -1,0 +1,22 @@
+[package]
+name = "dicto"
+version = "0.1.4"
+edition = "2024"
+authors = ["Mohammadreza Khani"]
+license = "AGPL-3.0-or-later"
+
+[dependencies]
+mdict-rs = { path = ".." }
+gpui = { git = "https://github.com/zed-industries/zed" }
+gpui_platform = { git = "https://github.com/zed-industries/zed", features = ["font-kit", "wayland", "x11"] }
+gpui-component = { git = "https://github.com/longbridge/gpui-component" }
+gpui-component-assets = { git = "https://github.com/longbridge/gpui-component" }
+anyhow = "1.0"
+tray-icon = "0.24.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+rodio = { version = "0.20", default-features = false, features = ["mp3", "wav", "vorbis", "flac"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+gtk = "0.18"
+x11rb = { version = "0.13", default-features = false }
