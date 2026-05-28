@@ -39,8 +39,8 @@ to keep the library honest about its dependencies.
 │   query::query_all                                               │
 │     ─► settings::enabled_mdx()  (filtered + ordered list)        │
 │     ─► for each enabled mdx:                                     │
-│           config::get_mdx_db(file) → Arc<redb::Database>         │
-│           read_txn → MDX_TABLE.get(word) → definition bytes      │
+│           MdxDictionary::open_fst() → Arc<FstIndex>              │
+│           FstIndex::get_record(word) → definition bytes          │
 │           if @@@LINK=…  re-resolve in same dict (max 5 hops)     │
 │                                                                  │
 │   query::lookup_resource(path)                                   │
@@ -50,20 +50,23 @@ to keep the library honest about its dependencies.
                             ▲
                             │
 ┌──────────────────────────────────────────────────────────────────┐
-│  redb mirrors built at startup                                   │
+│  FST indexes built at startup                                    │
 │                                                                  │
-│   <file>.mdx.redb  table "mdx"  key: &str  value: &[u8]         │
-│   <file>.mdd.redb  table "mdd"  key: &str  value: &[u8]         │
+│   <file>.mdx.fst      FST map: lowercased key → row index u64   │
+│   <file>.mdx.offsets  flat array of 24-byte offset records      │
+│   <file>.mdd.fst      same for MDD resources                    │
+│   <file>.mdd.offsets                                            │
 │                                                                  │
-│   Handles: RwLock<HashMap<file, Arc<Database>>>, lazy-filled     │
-│   on first request; reset_pools() drops them after changes.     │
+│   Each MdxDictionary holds RwLock<Option<Arc<FstIndex>>>;        │
+│   lazy-opened (memory-mapped) on first request.                  │
 └──────────────────────────────────────────────────────────────────┘
                             ▲
                             │
 ┌──────────────────────────────────────────────────────────────────┐
-│  Indexing (build_index / build_index_mdd)                        │
-│   parses the .mdx/.mdd, walks every record, writes to its .redb. │
-│   Runs at startup for any dict whose .redb is missing or empty.  │
+│  Indexing (build_mdx_index / build_mdd_index)                    │
+│   parses the .mdx/.mdd, walks every record, writes .fst +       │
+│   .offsets pair. Runs at startup for any dict whose .fst is      │
+│   missing or whose .offsets has zero records.                    │
 └──────────────────────────────────────────────────────────────────┘
                             ▲
                             │
@@ -163,7 +166,7 @@ gpui/
 | Where | What |
 |-------|------|
 | `~/.config/dicto/dicts/*.mdx` (and `.mdd`) | Source dictionaries, user-managed. |
-| `~/.config/dicto/dicts/*.mdx.redb` (and `.mdd.redb`) | redb mirrors built by `indexing`. |
+| `~/.config/dicto/dicts/*.mdx.fst` + `*.mdx.offsets` (and `.mdd.*`) | FST index + offset table built by `indexing`. |
 | `~/.config/dicto/settings.toml` | Enabled list + display order. |
 | `/tmp/mdict-rs-cache/` | Decoded images + transcoded WAV clips. Wiped on reboot; safe to delete any time. |
 

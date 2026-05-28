@@ -126,19 +126,19 @@ reindexes mid-session. Working copy + explicit Save keeps I/O batched.
 
 ## Hot reload
 
-The library's database handle map is a `RwLock<HashMap<file, Arc<Database>>>`
-that fills lazily — `db_for(file)` opens a redb `Database` on first
-request. `reset_pools()` empties both maps (`MDX_DBS`, `MDD_DBS`).
+Each `MdxDictionary` holds a `RwLock<Option<Arc<FstIndex>>>` that fills
+lazily — `open_fst()` memory-maps the `.fst` + `.offsets` files on first
+request. `registry::reload()` creates fresh `MdxDictionary` instances,
+which naturally drop the old memory maps. `reset_pools()` is a no-op.
 Together this means:
 
 - Toggling a dictionary on or off takes effect on the **next** query
-  (the handle is recreated against the current `.redb`).
+  (the new instance opens a fresh memory map against the current `.fst`).
 - Reordering takes effect on the next query (the iteration order
   comes from `enabled_mdx()`, which always reads current settings).
-- Enabling a dictionary that has no `.redb` yet triggers indexing in
+- Enabling a dictionary that has no `.fst` yet triggers indexing in
   the background; the first query after indexing completes is when
-  the handle gets opened. Until then the dict shows up but has zero
-  hits.
+  the map gets opened. Until then the dict shows up but has zero hits.
 
 No restart needed for any of these.
 
@@ -185,6 +185,7 @@ MDD:
   progress (`indexing_done / indexing_total — current_name`). The
   Import tab shows its own per-file progress bar during the copy +
   index pipeline.
-- Disabling a dictionary doesn't delete its `.redb` files. Re-enabling
-  is instant. If you actually want to reclaim disk, delete the
-  `.mdx.redb` and `.mdd.redb` files manually after disabling.
+- Disabling a dictionary doesn't delete its `.fst`/`.offsets` index files.
+  Re-enabling is instant. If you actually want to reclaim disk, delete
+  the `.mdx.fst`, `.mdx.offsets`, `.mdd.fst`, and `.mdd.offsets` files
+  manually after disabling.

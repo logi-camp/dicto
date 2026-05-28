@@ -1,10 +1,13 @@
 pub mod parser;
 
 use std::fs::{self, File};
+use std::io::{BufWriter, Write};
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 
-use redb::{Database, ReadableTable, ReadableTableMetadata, TableDefinition};
+use fst::automaton::{AlwaysMatch, Levenshtein, Str as FstStr};
+use fst::{Automaton, IntoStreamer, Map, MapBuilder, Streamer};
+use memmap2::Mmap;
 use tracing::{info, warn};
 
 use crate::dictionary::Dictionary;
@@ -44,12 +47,29 @@ fn decode_offset(b: &[u8]) -> Option<(u64, u32, u32, u32, u32)> {
     Some((file_offset, csize, dsize, start, end))
 }
 
-// ── redb table definitions ────────────────────────────────────────────────────
-
-const MDX_TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("mdx");
-const MDD_TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("mdd");
-
 const MAX_REDIRECTS: u8 = 5;
+
+// ── FST index ─────────────────────────────────────────────────────────────────
+
+struct FstIndex {
+    map: Map<Mmap>,
+    offsets: Mmap,
+}
+
+impl FstIndex {
+    fn open(fst_path: &str, off_path: &str) -> Option<Arc<Self>> {
+        let fst_mmap = unsafe { Mmap::map(&File::open(fst_path).ok()?).ok()? };
+        let map = Map::new(fst_mmap).ok()?;
+        let offsets = unsafe { Mmap::map(&File::open(off_path).ok()?).ok()? };
+        Some(Arc::new(Self { map, offsets }))
+    }
+
+    fn get_record(&self, key: &str) -> Option<&[u8]> {
+        let row = self.map.get(key.as_bytes())? as usize;
+        let start = row * REC_LEN;
+        self.offsets.get(start..start + REC_LEN)
+    }
+}
 
 // ── file read helper (pread — no cursor, thread-safe) ─────────────────────────
 
@@ -85,8 +105,8 @@ pub struct MdxDictionary {
     name: String,
     mdx_path: String,
     mdd_path: Option<String>,
-    db: RwLock<Option<Arc<Database>>>,
-    mdd_db: RwLock<Option<Arc<Database>>>,
+    fst: RwLock<Option<Arc<FstIndex>>>,
+    mdd_fst: RwLock<Option<Arc<FstIndex>>>,
     mdx_file: RwLock<Option<Arc<File>>>,
     mdd_file: RwLock<Option<Arc<File>>>,
 }
@@ -108,49 +128,49 @@ impl MdxDictionary {
             name,
             mdx_path: mdx_path.to_string(),
             mdd_path,
-            db: RwLock::new(None),
-            mdd_db: RwLock::new(None),
+            fst: RwLock::new(None),
+            mdd_fst: RwLock::new(None),
             mdx_file: RwLock::new(None),
             mdd_file: RwLock::new(None),
         }
     }
 
-    fn open_db(&self) -> Option<Arc<Database>> {
+    fn open_fst(&self) -> Option<Arc<FstIndex>> {
         {
-            if let Some(db) = self.db.read().unwrap().as_ref() {
-                return Some(db.clone());
+            if let Some(idx) = self.fst.read().unwrap().as_ref() {
+                return Some(idx.clone());
             }
         }
-        let db_path = format!("{}.redb", self.mdx_path);
-        match Database::open(&db_path) {
-            Ok(db) => {
-                let arc = Arc::new(db);
-                *self.db.write().unwrap() = Some(arc.clone());
-                Some(arc)
+        let fst_path = format!("{}.fst", self.mdx_path);
+        let off_path = format!("{}.offsets", self.mdx_path);
+        match FstIndex::open(&fst_path, &off_path) {
+            Some(idx) => {
+                *self.fst.write().unwrap() = Some(idx.clone());
+                Some(idx)
             }
-            Err(e) => {
-                warn!("{}: cannot open index {db_path}: {e}", self.name);
+            None => {
+                warn!("{}: cannot open FST index {fst_path}", self.name);
                 None
             }
         }
     }
 
-    fn open_mdd_db(&self) -> Option<Arc<Database>> {
+    fn open_mdd_fst(&self) -> Option<Arc<FstIndex>> {
         let mdd_path = self.mdd_path.as_ref()?;
         {
-            if let Some(db) = self.mdd_db.read().unwrap().as_ref() {
-                return Some(db.clone());
+            if let Some(idx) = self.mdd_fst.read().unwrap().as_ref() {
+                return Some(idx.clone());
             }
         }
-        let db_path = format!("{mdd_path}.redb");
-        match Database::open(&db_path) {
-            Ok(db) => {
-                let arc = Arc::new(db);
-                *self.mdd_db.write().unwrap() = Some(arc.clone());
-                Some(arc)
+        let fst_path = format!("{mdd_path}.fst");
+        let off_path = format!("{mdd_path}.offsets");
+        match FstIndex::open(&fst_path, &off_path) {
+            Some(idx) => {
+                *self.mdd_fst.write().unwrap() = Some(idx.clone());
+                Some(idx)
             }
-            Err(e) => {
-                warn!("{}: cannot open MDD index {db_path}: {e}", self.name);
+            None => {
+                warn!("{}: cannot open MDD FST index {fst_path}", self.name);
                 None
             }
         }
@@ -196,8 +216,8 @@ impl MdxDictionary {
     }
 
     fn invalidate_cache(&self) {
-        *self.db.write().unwrap() = None;
-        *self.mdd_db.write().unwrap() = None;
+        *self.fst.write().unwrap() = None;
+        *self.mdd_fst.write().unwrap() = None;
         *self.mdx_file.write().unwrap() = None;
         *self.mdd_file.write().unwrap() = None;
     }
@@ -221,20 +241,17 @@ impl Dictionary for MdxDictionary {
     }
 
     fn lookup(&self, word: &str) -> Option<String> {
-        let db = self.open_db()?;
-        let read_txn = db.begin_read().ok()?;
-        let table = read_txn.open_table(MDX_TABLE).ok()?;
-
-        let mut target = word.to_string();
+        let idx = self.open_fst()?;
+        let mut target = word.to_lowercase();
         let mut hops: u8 = 0;
 
         loop {
-            let bytes = table.get(target.as_str()).ok()??.value().to_vec();
-            let raw = self.read_entry_bytes(&bytes)?;
+            let rec = idx.get_record(&target)?.to_vec();
+            let raw = self.read_entry_bytes(&rec)?;
             let text = String::from_utf8_lossy(&raw).into_owned();
             match parse_link(&text) {
                 Some(next) if hops < MAX_REDIRECTS => {
-                    target = next;
+                    target = next.to_lowercase();
                     hops += 1;
                 }
                 Some(_) => return None,
@@ -244,50 +261,70 @@ impl Dictionary for MdxDictionary {
     }
 
     fn suggestions(&self, prefix: &str, limit: usize) -> Vec<String> {
-        let Some(db) = self.open_db() else { return vec![] };
-        let Ok(read_txn) = db.begin_read() else { return vec![] };
-        let Ok(table) = read_txn.open_table(MDX_TABLE) else { return vec![] };
-        let Ok(range) = table.range(prefix..) else { return vec![] };
+        let Some(idx) = self.open_fst() else { return vec![] };
+        let p = prefix.to_lowercase();
 
-        let mut results = Vec::new();
-        for entry in range.flatten() {
-            let key = entry.0.value();
-            if !key.starts_with(prefix) { break; }
-            results.push(key.to_string());
+        let mut results: Vec<String> = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+
+        // Prefix search — exact, fast, always first.
+        let mut stream = idx.map.search(FstStr::new(&p).starts_with()).into_stream();
+        while let Some((key, _)) = stream.next() {
+            if let Ok(s) = std::str::from_utf8(key) {
+                seen.insert(s.to_string());
+                results.push(s.to_string());
+            }
             if results.len() >= limit { break; }
         }
+
+        // Fuzzy supplement: fill remaining slots when query is long enough to
+        // have meaningful edit distance (avoids noise on 1-2 char inputs).
+        if results.len() < limit && p.len() >= 3 {
+            let dist = if p.len() < 6 { 1 } else { 2 };
+            if let Ok(lev) = Levenshtein::new(&p, dist) {
+                let mut fuzz = idx.map.search(&lev).into_stream();
+                while let Some((key, _)) = fuzz.next() {
+                    if let Ok(s) = std::str::from_utf8(key) {
+                        if seen.insert(s.to_string()) {
+                            results.push(s.to_string());
+                        }
+                    }
+                    if results.len() >= limit { break; }
+                }
+            }
+        }
+
         results
     }
 
     fn resource(&self, path: &str) -> Option<Vec<u8>> {
-        let db = self.open_mdd_db()?;
-        let read_txn = db.begin_read().ok()?;
-        let table = read_txn.open_table(MDD_TABLE).ok()?;
-
+        let idx = self.open_mdd_fst()?;
         let key = normalize_path(path);
         for cand in candidate_keys(&key) {
-            if let Ok(Some(guard)) = table.get(cand.as_str()) {
-                return self.read_mdd_entry_bytes(guard.value());
+            if let Some(rec) = idx.get_record(&cand) {
+                let rec = rec.to_vec();
+                return self.read_mdd_entry_bytes(&rec);
             }
         }
         None
     }
 
     fn css_resources(&self) -> Vec<(String, String)> {
-        let Some(db) = self.open_mdd_db() else { return vec![] };
-        let Ok(read_txn) = db.begin_read() else { return vec![] };
-        let Ok(table) = read_txn.open_table(MDD_TABLE) else { return vec![] };
-        let Ok(iter) = table.iter() else { return vec![] };
-
-        iter.flatten()
-            .filter(|e| e.0.value().ends_with(".css"))
-            .filter_map(|e| {
-                let name = e.0.value().to_string();
-                let data = self.read_mdd_entry_bytes(e.1.value())?;
+        let Some(idx) = self.open_mdd_fst() else { return vec![] };
+        let mut stream = idx.map.search(AlwaysMatch).into_stream();
+        let mut results = Vec::new();
+        while let Some((key, row)) = stream.next() {
+            let Ok(name) = std::str::from_utf8(key) else { continue };
+            if !name.ends_with(".css") { continue; }
+            let start = row as usize * REC_LEN;
+            let Some(rec) = idx.offsets.get(start..start + REC_LEN) else { continue };
+            let rec = rec.to_vec();
+            if let Some(data) = self.read_mdd_entry_bytes(&rec) {
                 let body = String::from_utf8_lossy(&data).into_owned();
-                Some((name, body))
-            })
-            .collect()
+                results.push((name.to_string(), body));
+            }
+        }
+        results
     }
 
     fn build_index(&self, force: bool) -> anyhow::Result<()> {
@@ -300,9 +337,9 @@ impl Dictionary for MdxDictionary {
     }
 
     fn index_ready(&self) -> bool {
-        let mdx_ready = PathBuf::from(format!("{}.redb", self.mdx_path)).exists();
+        let mdx_ready = PathBuf::from(format!("{}.fst", self.mdx_path)).exists();
         let mdd_ready = self.mdd_path.as_ref()
-            .map(|p| PathBuf::from(format!("{p}.redb")).exists())
+            .map(|p| PathBuf::from(format!("{p}.fst")).exists())
             .unwrap_or(true);
         mdx_ready && mdd_ready
     }
@@ -311,78 +348,84 @@ impl Dictionary for MdxDictionary {
 // ── index builders ────────────────────────────────────────────────────────────
 
 fn build_mdx_index(file: &str, force: bool) -> anyhow::Result<()> {
-    let db_path = format!("{file}.redb");
-    if PathBuf::from(&db_path).exists() {
-        if force { fs::remove_file(&db_path)?; } else { return Ok(()); }
+    let fst_path = format!("{file}.fst");
+    let off_path = format!("{file}.offsets");
+    if PathBuf::from(&fst_path).exists() {
+        if force {
+            fs::remove_file(&fst_path)?;
+            fs::remove_file(&off_path).ok();
+        } else {
+            return Ok(());
+        }
     }
-    info!("indexing MDX {} -> {}", file, db_path);
+    info!("indexing MDX {} -> {}", file, fst_path);
     let f = File::open(file)?;
     let mmap = unsafe { memmap2::Mmap::map(&f)? };
     let mdx = Mdx::parse(&mmap);
 
-    let db = Database::create(&db_path)?;
-    let write_txn = db.begin_write()?;
-    {
-        let mut table = write_txn.open_table(MDX_TABLE)?;
-        for entry in &mdx.entries {
-            let rec = encode_offset(
-                entry.file_offset,
-                entry.block_csize,
-                entry.block_dsize,
-                entry.start_in_block,
-                entry.end_in_block,
-            );
-            table.insert(entry.text.as_str(), rec.as_slice())?;
-        }
+    // lowercase + sort + dedup (keep first occurrence of each lowercased key)
+    let mut entries: Vec<(String, [u8; REC_LEN])> = mdx.entries.iter()
+        .map(|e| (e.text.to_lowercase(),
+                  encode_offset(e.file_offset, e.block_csize, e.block_dsize, e.start_in_block, e.end_in_block)))
+        .collect();
+    entries.sort_unstable_by(|a, b| a.0.cmp(&b.0));
+    entries.dedup_by(|a, b| a.0 == b.0); // a is later; returning true removes a, keeps b (first)
+
+    let mut off_writer = BufWriter::new(File::create(&off_path)?);
+    let mut builder = MapBuilder::new(BufWriter::new(File::create(&fst_path)?))?;
+    for (row, (key, rec)) in entries.iter().enumerate() {
+        builder.insert(key.as_bytes(), row as u64)?;
+        off_writer.write_all(rec)?;
     }
-    write_txn.commit()?;
-    info!("MDX indexed {} entries: {}", mdx.entries.len(), db_path);
+    builder.finish()?;
+    info!("MDX indexed {} entries: {}", entries.len(), fst_path);
     Ok(())
 }
 
 fn build_mdd_index(file: &str, force: bool) -> anyhow::Result<()> {
-    let db_path = format!("{file}.redb");
-    let needs = if PathBuf::from(&db_path).exists() {
-        force || mdd_db_empty(&db_path)
+    let fst_path = format!("{file}.fst");
+    let off_path = format!("{file}.offsets");
+    let needs = if PathBuf::from(&fst_path).exists() {
+        force || mdd_fst_empty(&fst_path)
     } else {
         true
     };
     if !needs { return Ok(()); }
-    if PathBuf::from(&db_path).exists() { fs::remove_file(&db_path)?; }
+    if PathBuf::from(&fst_path).exists() {
+        fs::remove_file(&fst_path)?;
+        fs::remove_file(&off_path).ok();
+    }
 
-    info!("indexing MDD {} -> {}", file, db_path);
+    info!("indexing MDD {} -> {}", file, fst_path);
     let f = File::open(file)?;
     let mmap = unsafe { memmap2::Mmap::map(&f)? };
     let mdd = Mdd::parse(&mmap);
 
-    let db = Database::create(&db_path)?;
-    let write_txn = db.begin_write()?;
-    {
-        let mut table = write_txn.open_table(MDD_TABLE)?;
-        for entry in &mdd.entries {
-            let key = normalize_path(&entry.path);
-            let rec = encode_offset(
-                entry.file_offset,
-                entry.block_csize,
-                entry.block_dsize,
-                entry.start_in_block,
-                entry.end_in_block,
-            );
-            table.insert(key.as_str(), rec.as_slice())?;
-        }
+    // normalize + sort + dedup (keep first occurrence of each key)
+    let mut entries: Vec<(String, [u8; REC_LEN])> = mdd.entries.iter()
+        .map(|e| (normalize_path(&e.path),
+                  encode_offset(e.file_offset, e.block_csize, e.block_dsize, e.start_in_block, e.end_in_block)))
+        .collect();
+    entries.sort_unstable_by(|a, b| a.0.cmp(&b.0));
+    entries.dedup_by(|a, b| a.0 == b.0);
+
+    let mut off_writer = BufWriter::new(File::create(&off_path)?);
+    let mut builder = MapBuilder::new(BufWriter::new(File::create(&fst_path)?))?;
+    for (row, (key, rec)) in entries.iter().enumerate() {
+        builder.insert(key.as_bytes(), row as u64)?;
+        off_writer.write_all(rec)?;
     }
-    write_txn.commit()?;
-    info!("MDD indexed {} entries: {}", mdd.entries.len(), db_path);
+    builder.finish()?;
+    info!("MDD indexed {} entries: {}", entries.len(), fst_path);
     Ok(())
 }
 
-fn mdd_db_empty(db_path: &str) -> bool {
-    let Ok(db) = Database::open(db_path) else { return true };
-    let Ok(read_txn) = db.begin_read() else { return true };
-    match read_txn.open_table(MDD_TABLE) {
-        Err(_) => true,
-        Ok(t) => t.len().unwrap_or(0) == 0,
-    }
+fn mdd_fst_empty(fst_path: &str) -> bool {
+    File::open(fst_path).ok()
+        .and_then(|f| unsafe { Mmap::map(&f) }.ok())
+        .and_then(|m| Map::new(m).ok())
+        .map(|m| m.len() == 0)
+        .unwrap_or(true)
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────────

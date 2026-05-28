@@ -196,21 +196,28 @@ stylesheet (some dictionaries — notably LDOCE5 — bundle their
 `ldoceaz.css` inside the MDD instead of shipping it as a separate
 file). See [rendering.md](rendering.md) for how the bytes get used.
 
-## Database handle lifecycle
+## Index handle lifecycle
 
-[src/config/mod.rs](../src/config/mod.rs)
+[src/formats/mdict/mod.rs](../src/formats/mdict/mod.rs)
 
-- `MDX_DBS` and `MDD_DBS` are `LazyLock<RwLock<HashMap<String, Arc<Database>>>>`.
-- Handles are **lazy**: `db_for(file)` returns the cached `Arc<Database>` or
-  opens a new one on first request. This matters when the settings
-  dialog enables a previously-disabled dictionary that has just been
-  re-indexed — no restart needed.
-- `reset_pools()` empties both maps. The settings dialog calls it on
-  Save so the next query opens a fresh handle against the (possibly
-  rebuilt) `.redb` file.
-- redb uses memory-mapped I/O; there is no WAL configuration or
-  connection pool — each `Arc<Database>` is a shared handle to the
-  same file and is safe to use from multiple threads.
+Each `MdxDictionary` owns two `RwLock<Option<Arc<FstIndex>>>` fields —
+one for the MDX FST, one for the MDD FST.
+
+`FstIndex` wraps:
+- `map: Map<Mmap>` — the FST map (lowercased key → row index), memory-mapped.
+- `offsets: Mmap` — the flat array of 24-byte offset records, memory-mapped.
+
+`open_fst()` / `open_mdd_fst()` return the cached `Arc<FstIndex>` or
+memory-map the files on first call. This matters when the settings
+dialog enables a previously-disabled dictionary that has just been
+re-indexed — no restart needed.
+
+`reset_pools()` is now a **no-op**. Cache invalidation happens naturally
+when `registry::reload()` creates fresh `MdxDictionary` instances that
+open new memory maps on their first query.
+
+Memory-mapped files are read-only; multiple threads can share the same
+`Arc<FstIndex>` safely.
 
 ## Gotchas
 

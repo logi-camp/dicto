@@ -23,7 +23,7 @@ serde = { version = "1", features = ["derive"] }
 toml = "0.8"
 encoding = "0.2"
 adler32 = "1"
-redb = "2"
+fst = { version = "0.4", features = ["levenshtein"] }
 flate2 = { version = "1", features = ["zlib"], default-features = false }
 rand = "0.9"
 rust-lzo = "0.6"
