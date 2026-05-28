@@ -5,17 +5,17 @@ use gpui::{
     ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Window,
 };
 use gpui_component::{
-    dialog::DialogButtonProps,
     h_flex,
     input::InputState,
-    v_flex, Root, TitleBar, WindowExt,
+    v_flex, Root, TitleBar,
 };
 
 use crate::colors;
 use crate::components::{
     detail_panel,
+    init_modal,
     search_bar::{self, SearchBarProps},
-    settings_panel,
+    settings_modal,
     word_list::{self, WordListProps},
 };
 use crate::state::{DictResult, DictState};
@@ -160,6 +160,8 @@ impl Render for DictApp {
             .size_full()
             .child(main)
             .children(dialog_layer)
+            .child(settings_modal::overlay(self.state.clone(), window, cx))
+            .child(init_modal::overlay(self.state.clone(), window, cx))
             .into_any_element()
     }
 }
@@ -212,11 +214,6 @@ fn indexing_bar(state: &Entity<DictState>, cx: &Context<DictApp>) -> gpui::AnyEl
         .into_any_element()
 }
 
-/// Cog button. Stateful so it gets its own hit-test region, with an
-/// `on_click` that calls `window.open_dialog` directly. We can't use
-/// `Dialog::trigger` here: the titlebar already owns a mouse_down
-/// listener for window-drag, and the wrapper Dialog inserts swallows
-/// the click before our config is applied.
 fn cog_button(state: Entity<DictState>) -> gpui::AnyElement {
     div()
         .id("cog-settings-btn")
@@ -232,44 +229,11 @@ fn cog_button(state: Entity<DictState>) -> gpui::AnyElement {
         .cursor_pointer()
         .hover(|s| s.bg(colors::surface()))
         .child(SharedString::from("⚙ Settings"))
-        .on_click(move |_, window, cx| {
-            let content_state = state.clone();
-            let save_state = state.clone();
-            let cancel_state = state.clone();
-            window.open_dialog(cx, move |dialog, _, _| {
-                let content_state = content_state.clone();
-                let save_state = save_state.clone();
-                let cancel_state = cancel_state.clone();
-                dialog
-                    .title("Dictionaries")
-                    .w(px(560.))
-                    .content(move |content, window, cx| {
-                        settings_panel::dialog_content(
-                            content_state.clone(),
-                            content,
-                            window,
-                            cx,
-                        )
-                    })
-                    .button_props(
-                        DialogButtonProps::default()
-                            .ok_text("Save")
-                            .cancel_text("Cancel"),
-                    )
-                    .on_ok({
-                        let save_state = save_state.clone();
-                        move |_, _, cx| {
-                            settings_panel::apply_save(&save_state, cx);
-                            true
-                        }
-                    })
-                    .on_cancel({
-                        let cancel_state = cancel_state.clone();
-                        move |_, _, cx| {
-                            settings_panel::revert(&cancel_state, cx);
-                            true
-                        }
-                    })
+        .on_click(move |_, _, cx| {
+            cx.update_entity(&state, |s, cx| {
+                s.show_settings_modal = true;
+                s.settings_active_tab = 0;
+                cx.notify();
             });
         })
         .into_any_element()

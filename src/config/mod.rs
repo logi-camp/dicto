@@ -65,7 +65,7 @@ fn collect_files_with_ext(dir: &PathBuf, ext: &str, out: &mut Vec<String>) {
     }
 }
 
-fn dirs_config_path() -> PathBuf {
+pub fn dirs_config_path() -> PathBuf {
     let base = dirs::config_dir().unwrap_or_else(|| PathBuf::from(".config"));
     base.join(APP_NAME).join("dicts")
 }

@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use mdict_rs::settings::DictEntry;
 
 use crate::html::Block;
@@ -6,6 +8,20 @@ use crate::html::Block;
 pub struct DictResult {
     pub name: String,
     pub blocks: Vec<Block>,
+}
+
+pub struct ImportFile {
+    pub path: PathBuf,
+    pub name: String,
+    pub status: ImportStatus,
+}
+
+pub enum ImportStatus {
+    Pending,
+    Copying,
+    Indexing,
+    Done,
+    Error(String),
 }
 
 pub struct DictState {
@@ -28,6 +44,16 @@ pub struct DictState {
     pub indexing_total: usize,
     pub indexing_done: usize,
     pub indexing_current: Option<String>,
+
+    /// True when the dicts directory was empty at startup — shows import modal.
+    pub show_init_modal: bool,
+    /// Files being imported via the init/settings modal.
+    pub import_files: Vec<ImportFile>,
+
+    /// True when the ⚙ Settings overlay is open.
+    pub show_settings_modal: bool,
+    /// Active tab in the settings overlay: 0 = Dictionaries, 1 = Import.
+    pub settings_active_tab: usize,
 }
 
 impl DictState {
@@ -43,6 +69,10 @@ impl DictState {
             indexing_total: 0,
             indexing_done: 0,
             indexing_current: None,
+            show_init_modal: mdict_rs::config::discover_mdx_files().is_empty(),
+            import_files: Vec::new(),
+            show_settings_modal: false,
+            settings_active_tab: 0,
         }
     }
 }

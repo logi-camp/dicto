@@ -3,7 +3,7 @@
 mdict-rs is two crates in one workspace:
 
 - **`mdict-rs`** (library + `mdict-rs` web bin) — pure-Rust MDX/MDD
-  parser, SQLite indexer, query pipeline, settings store.
+  parser, redb indexer, query pipeline, settings store.
 - **`mdict-gpui`** (under [gpui/](../gpui/)) — desktop UI built on
   [GPUI](https://github.com/zed-industries/zed) and
   [gpui-component](https://github.com/longbridge/gpui-component).
@@ -39,8 +39,8 @@ to keep the library honest about its dependencies.
 │   query::query_all                                               │
 │     ─► settings::enabled_mdx()  (filtered + ordered list)        │
 │     ─► for each enabled mdx:                                     │
-│           config::get_db_connection(file)                        │
-│           SELECT def FROM MDX_INDEX WHERE text = :word           │
+│           config::get_mdx_db(file) → Arc<redb::Database>         │
+│           read_txn → MDX_TABLE.get(word) → definition bytes      │
 │           if @@@LINK=…  re-resolve in same dict (max 5 hops)     │
 │                                                                  │
 │   query::lookup_resource(path)                                   │
@@ -50,22 +50,20 @@ to keep the library honest about its dependencies.
                             ▲
                             │
 ┌──────────────────────────────────────────────────────────────────┐
-│  SQLite mirrors built at startup                                 │
+│  redb mirrors built at startup                                   │
 │                                                                  │
-│   <file>.mdx.db    table MDX_INDEX(text TEXT PRIMARY KEY,        │
-│                                    def  TEXT NOT NULL)           │
-│   <file>.mdd.db    table MDD_INDEX(path TEXT PRIMARY KEY,        │
-│                                    data BLOB NOT NULL)           │
+│   <file>.mdx.redb  table "mdx"  key: &str  value: &[u8]         │
+│   <file>.mdd.redb  table "mdd"  key: &str  value: &[u8]         │
 │                                                                  │
-│   Pools: RwLock<HashMap<file, r2d2::Pool>>, lazy-filled on first │
-│   request; reset_pools() drops them after settings changes.      │
+│   Handles: RwLock<HashMap<file, Arc<Database>>>, lazy-filled     │
+│   on first request; reset_pools() drops them after changes.     │
 └──────────────────────────────────────────────────────────────────┘
                             ▲
                             │
 ┌──────────────────────────────────────────────────────────────────┐
-│  Indexing (mdx_to_sqlite / mdd_to_sqlite)                        │
-│   parses the .mdx/.mdd, walks every record, writes to its DB.    │
-│   Runs at startup for any dict whose DB is missing or empty.     │
+│  Indexing (build_index / build_index_mdd)                        │
+│   parses the .mdx/.mdd, walks every record, writes to its .redb. │
+│   Runs at startup for any dict whose .redb is missing or empty.  │
 └──────────────────────────────────────────────────────────────────┘
                             ▲
                             │
@@ -92,7 +90,7 @@ src/
 │   ├── recordblock.rs      compressed record block reader
 │   ├── mdx.rs              .mdx → Iterator<Record>
 │   └── mdd.rs              .mdd → Iterator<Resource>
-├── indexing/mod.rs         mdx_to_sqlite / mdd_to_sqlite / re-index
+├── indexing/mod.rs         build_index / build_index_mdd / re-index
 ├── query/mod.rs            query, query_all, search_suggestions,
 │                            lookup_resource, css_resources_in_mdd,
 │                            redirect resolution
@@ -106,22 +104,45 @@ gpui/
 │   ├── main.rs             window setup, tray, indexing kick-off,
 │   │                       per-dict CSS loader
 │   ├── app.rs              DictApp (Render), lookup_word(),
-│   │                       cog button + Dialog wiring
-│   ├── state.rs            DictState (results, suggestions,
-│   │                       dictionaries snapshot)
+│   │                       cog button, indexing_bar
+│   ├── state.rs            DictState — see "State fields" below
 │   ├── audio.rs            rodio + ffmpeg fallback for Speex
 │   ├── colors.rs           theme color refs
 │   ├── components/
 │   │   ├── detail_panel.rs heading + TabBar + scroll body
 │   │   ├── word_list.rs    left pane
 │   │   ├── search_bar.rs   input + right_slot for the cog
-│   │   └── settings_panel.rs Dialog body, save/cancel/reindex
+│   │   ├── settings_modal.rs full-screen overlay modal (2 tabs)
+│   │   ├── settings_panel.rs dict list UI + apply_save / revert
+│   │   └── init_modal.rs   first-run import overlay; also provides
+│   │                       import_tab_content shared by settings tab
 │   └── html/
 │       ├── mod.rs          STYLESHEETS map, parse_styled
 │       ├── css.rs          CSS subset parser + matcher
 │       ├── parser.rs       HTML tokenizer + element-stack builder
 │       └── render.rs       Block → GPUI element tree
 ```
+
+## State fields (DictState)
+
+`gpui/src/state.rs` — the single `Entity<DictState>` shared across all components.
+
+| Field | Type | Purpose |
+|-------|------|---------|
+| `results` | `Vec<DictResult>` | Parsed hits for the current lookup word. |
+| `active_result` | `usize` | Index into `results` shown in DetailPanel. |
+| `result_word` | `Option<String>` | The word that produced `results`. |
+| `is_searching` | `bool` | True while background query is in flight. |
+| `suggestions` | `Vec<String>` | Current autocomplete list. |
+| `selected_suggestion` | `Option<usize>` | Keyboard-selected row in WordList. |
+| `dictionaries` | `Vec<DictEntry>` | Working copy for the settings Dictionaries tab. |
+| `indexing_total` / `indexing_done` / `indexing_current` | `usize` / `usize` / `Option<String>` | Background indexing progress shown in `indexing_bar`. |
+| `show_settings_modal` | `bool` | True when the ⚙ Settings overlay is visible. |
+| `settings_active_tab` | `usize` | 0 = Dictionaries tab, 1 = Import tab. |
+| `show_init_modal` | `bool` | True when `~/.config/dicto/dicts/` contains no `.mdx` files at startup. |
+| `import_files` | `Vec<ImportFile>` | Files queued/in-progress/completed in the current import session. Cleared when either modal is dismissed. |
+
+`ImportFile.status` cycles through `Pending → Copying → Indexing → Done` (or `Error(String)` on failure).
 
 ## Threading & async
 
@@ -142,7 +163,7 @@ gpui/
 | Where | What |
 |-------|------|
 | `~/.config/dicto/dicts/*.mdx` (and `.mdd`) | Source dictionaries, user-managed. |
-| `~/.config/dicto/dicts/*.mdx.db` (and `.mdd.db`) | SQLite mirrors built by `indexing`. |
+| `~/.config/dicto/dicts/*.mdx.redb` (and `.mdd.redb`) | redb mirrors built by `indexing`. |
 | `~/.config/dicto/settings.toml` | Enabled list + display order. |
 | `/tmp/mdict-rs-cache/` | Decoded images + transcoded WAV clips. Wiped on reboot; safe to delete any time. |
 
