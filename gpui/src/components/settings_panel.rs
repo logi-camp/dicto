@@ -1,11 +1,3 @@
-//! Settings panel rendered as a Dialog modal.
-//!
-//! The cog button in the title bar acts as the Dialog trigger; the
-//! dialog itself owns its open/close state via gpui-component's
-//! overlay system. The dialog body is a scrollable list of
-//! dictionaries with a checkbox-style toggle and up/down reorder
-//! buttons.
-
 use std::path::Path;
 
 use gpui::{
@@ -13,7 +5,6 @@ use gpui::{
     SharedString, StatefulInteractiveElement, Styled,
 };
 use gpui_component::{
-    dialog::DialogContent,
     scroll::ScrollableElement,
     h_flex, v_flex,
 };
@@ -22,16 +13,14 @@ use tracing::{info, warn};
 
 use crate::{colors, state::DictState};
 
-/// Build the contents shown inside the settings Dialog.
-pub fn dialog_content(
+/// Build the dictionary list UI as a plain element (used by the settings overlay tab).
+pub fn panel_content(
     state: Entity<DictState>,
-    content: DialogContent,
-    _window: &mut gpui::Window,
     cx: &mut gpui::App,
-) -> DialogContent {
+) -> gpui::AnyElement {
     let snapshot = state.read(cx).dictionaries.clone();
 
-    let header = div()
+    let header_text = div()
         .text_size(px(12.))
         .text_color(colors::text_secondary())
         .child(SharedString::from(
@@ -39,15 +28,11 @@ pub fn dialog_content(
              dictionary is queried first.",
         ));
 
-    // `overflow_y_scrollbar` wraps the v_flex in a `size_full` container,
-    // so we need to give it a concrete height — `max_h` alone doesn't
-    // bound the wrapper. A fixed-pixel height is fine for a settings
-    // dialog where we control the overall size.
     let mut list = v_flex()
         .id("settings-dict-list")
         .w_full()
         .gap(px(6.))
-        .h(px(360.))
+        .h(px(420.))
         .overflow_y_scrollbar();
 
     if snapshot.is_empty() {
@@ -57,8 +42,8 @@ pub fn dialog_content(
                 .text_color(colors::text_secondary())
                 .py(px(20.))
                 .child(SharedString::from(
-                    "No .mdx files found in ~/.config/mdict-dict/mdict/. Drop dictionary \
-                     files there and reopen this dialog.",
+                    "No .mdx files found in ~/.config/dicto/dicts/. Use the Import tab to \
+                     add dictionary files.",
                 )),
         );
     } else {
@@ -68,8 +53,14 @@ pub fn dialog_content(
         }
     }
 
-    content.child(v_flex().w_full().gap(px(10.)).child(header).child(list))
+    v_flex()
+        .w_full()
+        .gap(px(10.))
+        .child(header_text)
+        .child(list)
+        .into_any_element()
 }
+
 
 fn row(idx: usize, entry: &DictEntry, total: usize, state: Entity<DictState>) -> gpui::AnyElement {
     let display = Path::new(&entry.path)

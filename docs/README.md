@@ -9,7 +9,7 @@ project. Start with [architecture.md](architecture.md) for the
 | File | What's in it |
 |------|--------------|
 | [architecture.md](architecture.md) | High-level overview, data flow, crate layout, threading model. |
-| [mdict-format.md](mdict-format.md) | MDX/MDD on-disk layout, the parser's interpretation, indexing into SQLite, the query pipeline (including `@@@LINK=` redirects). |
+| [mdict-format.md](mdict-format.md) | MDX/MDD on-disk layout, the parser's interpretation, indexing into redb, the query pipeline (including `@@@LINK=` redirects). |
 | [rendering.md](rendering.md) | HTML → GPUI element pipeline: tokenizer, CSS subset, dark-theme color remap, image extraction, audio playback (rodio + ffmpeg/Speex), all the gotchas. |
 | [settings.md](settings.md) | Per-dictionary configuration: enable/disable, reorder, hot reload, where settings live on disk. |
 

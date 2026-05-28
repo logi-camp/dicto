@@ -128,26 +128,24 @@ WARN mdd: failed to decode block at 0xfa13321 (csize=57117), skipping;
      first record in block: '\z_usb01242.spx'
 ```
 
-## Indexing to SQLite
+## Indexing to redb
 
-[src/indexing/mod.rs](../src/indexing/mod.rs)
+[src/formats/mdict/mod.rs](../src/formats/mdict/mod.rs)
 
-Two parallel functions:
+Two parallel functions on `MdxDictionary`:
 
-- `indexing(files, reindex)` builds `<file>.mdx.db` with table
-  `MDX_INDEX(text PRIMARY KEY, def NOT NULL)`.
-- `indexing_mdd(files, reindex)` builds `<file>.mdd.db` with table
-  `MDD_INDEX(path PRIMARY KEY, data BLOB)`.
+- `build_index(reindex)` builds `<file>.mdx.redb` with redb table
+  `"mdx"` keyed by `&str` (headword), value `&[u8]` (definition bytes).
+- `build_index_mdd(reindex)` builds `<file>.mdd.redb` with redb table
+  `"mdd"` keyed by `&str` (normalized path), value `&[u8]` (resource bytes).
 
 ### Heal-empty-DB
 
 A previous version of MDD parsing would panic on corrupt blocks and
-leave behind a 0-byte `.mdd.db` shell. The current `indexing_mdd`
-runs `mdd_db_incomplete()` before deciding to skip — if the DB file
-exists but has no `MDD_INDEX` table or has zero rows, it gets
-re-indexed. The MDX side intentionally has no equivalent because MDX
-files don't have the same corruption issue and re-indexing them is
-expensive (LDOCE5's `.mdx.db` is 580 MB).
+leave behind a 0-byte shell. The current `build_index_mdd` checks
+whether the `.redb` is missing or has zero rows before deciding to
+skip — if empty, it gets re-indexed. The MDX side intentionally has
+no equivalent because re-indexing large MDX files is expensive.
 
 ### Path normalization
 
@@ -178,10 +176,10 @@ cross dictionaries.
 
 ### `search_suggestions(prefix, limit)`
 
-`SELECT text FROM MDX_INDEX WHERE text LIKE :pattern ORDER BY text
-LIMIT :limit`. Results are deduplicated across dictionaries via a
-`HashSet` so the word list doesn't show the same word three times
-when it exists in three dicts.
+Opens a range scan on the `"mdx"` redb table starting at `prefix`
+and collects entries while they share the prefix. Results are
+deduplicated across dictionaries via a `HashSet` so the word list
+doesn't show the same word three times when it exists in three dicts.
 
 ### `lookup_resource(path)`
 
@@ -198,20 +196,21 @@ stylesheet (some dictionaries — notably LDOCE5 — bundle their
 `ldoceaz.css` inside the MDD instead of shipping it as a separate
 file). See [rendering.md](rendering.md) for how the bytes get used.
 
-## Connection pool lifecycle
+## Database handle lifecycle
 
 [src/config/mod.rs](../src/config/mod.rs)
 
-- `DB_POOLS` and `MDD_DB_POOLS` are `RwLock<HashMap<file, Pool>>`.
-- Pools are **lazy**: `pool_for(file)` returns the cached pool or
-  creates one on first request. This matters when the settings
+- `MDX_DBS` and `MDD_DBS` are `LazyLock<RwLock<HashMap<String, Arc<Database>>>>`.
+- Handles are **lazy**: `db_for(file)` returns the cached `Arc<Database>` or
+  opens a new one on first request. This matters when the settings
   dialog enables a previously-disabled dictionary that has just been
   re-indexed — no restart needed.
 - `reset_pools()` empties both maps. The settings dialog calls it on
-  Save so the next query sees a fresh pool against the (possibly
-  rebuilt) DB.
-- SQLite is opened in WAL mode with a 64 MB cache and 5 s busy
-  timeout; see `build_pool()`.
+  Save so the next query opens a fresh handle against the (possibly
+  rebuilt) `.redb` file.
+- redb uses memory-mapped I/O; there is no WAL configuration or
+  connection pool — each `Arc<Database>` is a shared handle to the
+  same file and is safe to use from multiple threads.
 
 ## Gotchas
 
@@ -226,6 +225,6 @@ file). See [rendering.md](rendering.md) for how the bytes get used.
 - `Mdx::new` and `Mdd::new` panic on truly malformed files. They're
   called once per startup so this is acceptable, but if you wrap
   them in a long-running loop, add `catch_unwind`.
-- The on-disk `.mdx.db` retains rows from before a redirect target
-  was renamed; `indexing` does `insert or replace` so subsequent
-  builds heal the table.
+- The on-disk `.mdx.redb` retains rows from before a redirect target
+  was renamed; `build_index` overwrites existing keys on subsequent
+  builds, so the table self-heals.
