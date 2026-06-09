@@ -209,7 +209,7 @@ detail panel. Cost matters here.
 
 | Block | Element |
 |-------|---------|
-| `Paragraph` | If only one run, a single styled `div` (text wraps inside it). Multi-run paragraphs use an `h_flex().flex_wrap()` with one child per inline run. |
+| `Paragraph` | If only one run, wrap in a `w_full` div containing a single styled `div` (text wraps inside it; the outer div ensures a bounded width). Multi-run paragraphs use an `h_flex().flex_wrap()` with one child per inline run; each child uses `flex_shrink()` and `min_w(px(0))` to allow wrapping inside individual runs! |
 | `Heading` | Same as Paragraph but with a larger `font-size` and bold. |
 | `ListItem` | `h_flex` with a `•` and a child Paragraph indented by depth. |
 | `Divider` | A 1 px line. |
@@ -403,3 +403,15 @@ Always pass paths as `PathBuf` (or `&Path`); URLs as `SharedUri`.
 
 `From<usize>` for `ElementId` saves a `SharedString::from(format!(...))`
 per frame when generating unique element ids. Use it for hot loops.
+
+### 9. Text wrapping in GPUI needs a bounded container width
+
+GPUI's internal text layout engine will only compute line breaks if the element containing the text has a known/bounded width! For a single text div, you must ensure:
+1. All parent elements have a bounded width
+2. The text div itself has `w_full()` or a fixed/constrained width!
+
+For flex‑wrap containers with multiple inline items, also add:
+- `.flex_shrink()` to items so they can shrink below their intrinsic width
+- `.min_w(px(0))` to ensure items don't refuse to shrink beyond their content width (this is a common flexbox gotcha!)
+
+Without these, text runs will overflow horizontally, and lines will only break between flex items, not inside them!

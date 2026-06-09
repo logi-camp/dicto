@@ -116,10 +116,13 @@ fn paragraph(
     weight: Option<FontWeight>,
 ) -> gpui::AnyElement {
     // Single-run paragraphs (the common case for long body text) skip
-    // the wrapping h_flex entirely; gpui's text layout already wraps
-    // inside a single styled div.
+    // the wrapping h_flex entirely; wrap in a w_full div so the text
+    // knows its container width and can wrap properly!
     if inlines.len() == 1 {
-        return render_run(idx, 0, &inlines[0], base_size, weight);
+        return div()
+            .w_full()
+            .child(render_run(idx, 0, &inlines[0], base_size, weight))
+            .into_any_element();
     }
 
     let mut row = h_flex()
@@ -191,6 +194,8 @@ fn styled_span(
             .font_weight(font_weight)
             .text_color(color)
             .cursor_pointer()
+            .flex_shrink()
+            .min_w(px(0.))
             .on_click(move |_, _, _cx| {
                 debug!("entry link clicked: {target}");
             });
@@ -209,7 +214,9 @@ fn styled_span(
     let mut el = div()
         .text_size(px(size_px))
         .font_weight(font_weight)
-        .text_color(color);
+        .text_color(color)
+        .flex_shrink()
+        .min_w(px(0.));
     if let Some(bg) = bg {
         el = el.bg(bg);
     }
