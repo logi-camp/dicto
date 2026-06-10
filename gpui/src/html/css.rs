@@ -213,7 +213,11 @@ fn parse_compound(token: &str) -> Option<Compound> {
         match c {
             '.' | '#' => {
                 flush_token(&mut compound, &mut state, &mut buf);
-                state = if c == '.' { ParseState::Class } else { ParseState::Id };
+                state = if c == '.' {
+                    ParseState::Class
+                } else {
+                    ParseState::Id
+                };
             }
             _ => buf.push(c),
         }

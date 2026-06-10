@@ -10,8 +10,8 @@ use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 
 use gpui::{
-    div, img, px, FontWeight, InteractiveElement, IntoElement, ParentElement, SharedString,
-    StatefulInteractiveElement, Styled,
+    FontWeight, InteractiveElement, IntoElement, ParentElement, SharedString,
+    StatefulInteractiveElement, Styled, div, img, px, svg,
 };
 use gpui_component::{h_flex, v_flex};
 use tracing::{debug, warn};
@@ -40,10 +40,16 @@ pub fn render_blocks(blocks: &[Block]) -> gpui::AnyElement {
 fn render_block(idx: usize, block: &Block) -> gpui::AnyElement {
     match block {
         Block::Paragraph { runs, layout } => with_layout(paragraph(idx, runs, 14.0, None), layout),
-        Block::Heading { level, runs, layout } => {
-            with_layout(heading(idx, *level, runs), layout)
-        }
-        Block::ListItem { ordered, depth, content } => list_item(idx, *ordered, *depth, content),
+        Block::Heading {
+            level,
+            runs,
+            layout,
+        } => with_layout(heading(idx, *level, runs), layout),
+        Block::ListItem {
+            ordered,
+            depth,
+            content,
+        } => list_item(idx, *ordered, *depth, content),
         Block::Divider => divider(),
         Block::Image(src) => image_block(idx, src.as_ref()),
     }
@@ -66,24 +72,18 @@ fn with_layout(inner: gpui::AnyElement, layout: &BlockLayout) -> gpui::AnyElemen
     let mt = layout.margin_top_px.clamp(0.0, 80.0);
     let mb = layout.margin_bottom_px.clamp(0.0, 80.0);
     let ml = layout.margin_left_px.clamp(0.0, 80.0);
-    if mt == 0.0 && mb == 0.0 && ml == 0.0 {
+    let bg = layout.bg_color.as_ref().and_then(|c| parse_bg_color(c));
+    if mt == 0.0 && mb == 0.0 && ml == 0.0 && bg.is_none() {
         return inner;
     }
-    div()
-        .w_full()
-        .pt(px(mt))
-        .pb(px(mb))
-        .pl(px(ml))
-        .child(inner)
-        .into_any_element()
+    let mut el = div().w_full().pt(px(mt)).pb(px(mb)).pl(px(ml));
+    if let Some(bg) = bg {
+        el = el.bg(bg);
+    }
+    el.child(inner).into_any_element()
 }
 
-fn list_item(
-    idx: usize,
-    _ordered: bool,
-    depth: u8,
-    content: &[Inline],
-) -> gpui::AnyElement {
+fn list_item(idx: usize, _ordered: bool, depth: u8, content: &[Inline]) -> gpui::AnyElement {
     let indent = px(16.0 * depth as f32);
     h_flex()
         .w_full()
@@ -119,23 +119,147 @@ fn paragraph(
     // the wrapping h_flex entirely; wrap in a w_full div so the text
     // knows its container width and can wrap properly!
     if inlines.len() == 1 {
-        return div()
-            .w_full()
-            .child(render_run(idx, 0, &inlines[0], base_size, weight))
-            .into_any_element();
+        let child = if is_grouped_link(&inlines[0]) {
+            render_link_group(idx, 0, &inlines[0..1], base_size, weight)
+        } else {
+            render_run(idx, 0, &inlines[0], base_size, weight)
+        };
+        return div().w_full().child(child).into_any_element();
     }
 
-    let mut row = h_flex()
-        .w_full()
-        .flex_wrap()
-        .gap_x(px(0.))
-        .gap_y(px(2.));
+    let mut row = h_flex().w_full().flex_wrap().gap_x(px(0.)).gap_y(px(2.));
 
-    for (i, run) in inlines.iter().enumerate() {
-        row = row.child(render_run(idx, i, run, base_size, weight));
+    let mut i = 0;
+    while i < inlines.len() {
+        let end = grouped_link_end(inlines, i);
+        if end > i + 1 || is_grouped_link(&inlines[i]) {
+            row = row.child(render_link_group(
+                idx,
+                i,
+                &inlines[i..end],
+                base_size,
+                weight,
+            ));
+            i = end;
+        } else {
+            row = row.child(render_run(idx, i, &inlines[i], base_size, weight));
+            i += 1;
+        }
     }
 
     row.into_any_element()
+}
+
+fn grouped_link_end(inlines: &[Inline], start: usize) -> usize {
+    if !is_grouped_link(&inlines[start]) {
+        return start + 1;
+    }
+    let mut end = start + 1;
+    while end < inlines.len()
+        && same_grouped_link(inlines[start].link.as_ref(), inlines[end].link.as_ref())
+    {
+        end += 1;
+    }
+    end
+}
+
+fn is_grouped_link(run: &Inline) -> bool {
+    matches!(run.link, Some(Link::Entry(_)) | Some(Link::External(_)))
+        && (run.style.bg_color.is_some()
+            || run.style.padding_top_px > 0.0
+            || run.style.padding_right_px > 0.0
+            || run.style.padding_bottom_px > 0.0
+            || run.style.padding_left_px > 0.0
+            || run.style.margin_right_px > 0.0
+            || run.style.border_radius_px > 0.0)
+}
+
+fn same_grouped_link(a: Option<&Link>, b: Option<&Link>) -> bool {
+    match (a, b) {
+        (Some(Link::Entry(a)), Some(Link::Entry(b))) => a == b,
+        (Some(Link::External(a)), Some(Link::External(b))) => a == b,
+        _ => false,
+    }
+}
+
+fn render_link_group(
+    block_idx: usize,
+    run_idx: usize,
+    runs: &[Inline],
+    base_size: f32,
+    weight: Option<FontWeight>,
+) -> gpui::AnyElement {
+    let first = &runs[0];
+    let link = first.link.as_ref();
+    let target_word = match link {
+        Some(Link::Entry(word)) => Some(word.clone()),
+        _ => None,
+    };
+
+    let mut group = h_flex()
+        .id(SharedString::from(format!("grp-{block_idx}-{run_idx}")))
+        .items_center()
+        .gap(px(0.))
+        .flex_shrink()
+        .min_w(px(0.));
+
+    if let Some(bg) = first
+        .style
+        .bg_color
+        .as_ref()
+        .and_then(|c| parse_bg_color(c))
+    {
+        group = group.bg(bg);
+    }
+    if first.style.padding_top_px > 0.0 {
+        group = group.pt(px(first.style.padding_top_px));
+    }
+    if first.style.padding_right_px > 0.0 {
+        group = group.pr(px(first.style.padding_right_px));
+    }
+    if first.style.padding_bottom_px > 0.0 {
+        group = group.pb(px(first.style.padding_bottom_px));
+    }
+    if first.style.padding_left_px > 0.0 {
+        group = group.pl(px(first.style.padding_left_px));
+    }
+    if first.style.margin_right_px > 0.0 {
+        group = group.mr(px(first.style.margin_right_px));
+    }
+    if first.style.border_radius_px > 0.0 {
+        group = group.rounded(px(first.style.border_radius_px));
+    }
+
+    let group = if let Some(word) = target_word {
+        let target = word.clone();
+        group.cursor_pointer().on_click(move |_, _, _cx| {
+            debug!("entry link clicked: {target}");
+        })
+    } else {
+        group
+    };
+
+    let group = runs.iter().enumerate().fold(group, |group, (offset, run)| {
+        let mut style = run.style.clone();
+        style.bg_color = None;
+        style.padding_top_px = 0.0;
+        style.padding_right_px = 0.0;
+        style.padding_bottom_px = 0.0;
+        style.padding_left_px = 0.0;
+        style.margin_right_px = 0.0;
+        style.border_radius_px = 0.0;
+        group.child(styled_span(
+            block_idx,
+            run_idx + offset,
+            run.text.clone(),
+            &style,
+            base_size,
+            weight,
+            None,
+        ))
+    });
+
+    group.into_any_element()
 }
 
 fn render_run(
@@ -146,7 +270,14 @@ fn render_run(
     weight: Option<FontWeight>,
 ) -> gpui::AnyElement {
     if let Some(Link::Sound(path)) = &run.link {
-        return sound_button(block_idx, run_idx, run.text.as_ref(), path.clone());
+        return sound_button(
+            block_idx,
+            run_idx,
+            run.text.as_ref(),
+            &run.style,
+            run.image.as_ref(),
+            path.clone(),
+        );
     }
     styled_span(
         block_idx,
@@ -168,7 +299,7 @@ fn styled_span(
     weight: Option<FontWeight>,
     link: Option<&Link>,
 ) -> gpui::AnyElement {
-    let color = if let Some(c) = style.color.as_ref().and_then(|c| parse_color(c)) {
+    let color = if let Some(c) = style.color.as_ref().and_then(|c| parse_text_color(c)) {
         c
     } else if matches!(link, Some(Link::Entry(_)) | Some(Link::External(_))) {
         colors::primary()
@@ -176,7 +307,7 @@ fn styled_span(
         colors::text()
     };
 
-    let bg = style.bg_color.as_ref().and_then(|c| parse_color(c));
+    let bg = style.bg_color.as_ref().and_then(|c| parse_bg_color(c));
 
     let font_weight = if style.bold || weight == Some(FontWeight::BOLD) {
         FontWeight::BOLD
@@ -184,7 +315,10 @@ fn styled_span(
         weight.unwrap_or(FontWeight::NORMAL)
     };
 
-    let size_px = style.font_size_px.unwrap_or(base_size);
+    let mut size_px = style.font_size_px.unwrap_or(base_size);
+    if style.superscript || style.subscript {
+        size_px *= 0.7;
+    }
 
     if let Some(Link::Entry(word)) = link {
         let target = word.clone();
@@ -233,32 +367,79 @@ fn sound_button(
     block_idx: usize,
     run_idx: usize,
     label: &str,
+    style: &Style,
+    image_src: Option<&SharedString>,
     path: SharedString,
 ) -> gpui::AnyElement {
-    let display: SharedString = if label.trim().is_empty() {
-        SharedString::from("▶")
-    } else {
-        SharedString::from(format!("▶ {}", label.trim()))
-    };
-
-    div()
+    let icon_only = image_src.is_none() && label.trim().is_empty();
+    let mut btn = div()
         .id(SharedString::from(format!("snd-{block_idx}-{run_idx}")))
-        .px(px(8.))
-        .py(px(2.))
-        .mx(px(2.))
-        .rounded(px(10.))
-        .bg(colors::surface())
-        .border_1()
-        .border_color(colors::border())
-        .text_size(px(13.))
-        .text_color(colors::primary())
         .cursor_pointer()
-        .hover(|s| s.bg(colors::border()))
-        .child(display)
-        .on_click(move |_, _, _cx| {
-            audio::play_resource(path.as_ref());
-        })
-        .into_any_element()
+        .flex_shrink()
+        .min_w(px(0.));
+
+    if style.margin_left_px > 0.0 {
+        btn = btn.ml(px(style.margin_left_px));
+    }
+    if style.margin_right_px > 0.0 {
+        btn = btn.mr(px(style.margin_right_px));
+    }
+
+    // If we have a speaker icon image (e.g. img/spkr_r.png), render it.
+    // Otherwise fall back to the ▶ text pill.
+    if let Some(src) = image_src {
+        btn = btn
+            .px(px(4.))
+            .py(px(1.))
+            .mx(px(1.))
+            .rounded(px(4.))
+            .hover(|s| s.bg(colors::border()));
+        if let Some(bytes) = mdict_rs::query::lookup_resource(src.as_ref()) {
+            if let Some(cached) = cache_image(src.as_ref(), &bytes) {
+                btn = btn.child(img(cached).h(px(16.)).w(px(16.)));
+            } else {
+                btn = btn.child(SharedString::from("▶"));
+            }
+        } else {
+            btn = btn.child(SharedString::from("▶"));
+        }
+    } else if icon_only {
+        let color = style
+            .color
+            .as_ref()
+            .and_then(|c| parse_text_color(c))
+            .unwrap_or(colors::primary());
+        let size_px = style.font_size_px.unwrap_or(16.0);
+        btn = btn.child(
+            svg()
+                .path("icons/play.svg")
+                .text_color(color)
+                .size(px(size_px)),
+        );
+    } else {
+        let display: SharedString = if label.trim().is_empty() {
+            SharedString::from("▶")
+        } else {
+            SharedString::from(format!("▶ {}", label.trim()))
+        };
+        btn = btn
+            .px(px(4.))
+            .py(px(1.))
+            .mx(px(1.))
+            .rounded(px(4.))
+            .hover(|s| s.bg(colors::border()))
+            .bg(colors::surface())
+            .border_1()
+            .border_color(colors::border())
+            .text_size(px(13.))
+            .text_color(colors::primary())
+            .child(display);
+    }
+
+    btn.on_click(move |_, _, _cx| {
+        audio::play_resource(path.as_ref());
+    })
+    .into_any_element()
 }
 
 fn image_block(idx: usize, src: &str) -> gpui::AnyElement {
@@ -320,12 +501,20 @@ fn cache_image(src: &str, bytes: &[u8]) -> Option<PathBuf> {
     Some(path)
 }
 
-/// Parse an HTML color value (named, `#rgb`, or `#rrggbb`) and remap
-/// it for the app's dark theme: hue is preserved, lightness is pushed
-/// up if the source color would be too dark to read on the background.
-fn parse_color(s: &str) -> Option<gpui::Hsla> {
+/// Parse an HTML color value for foreground text on the app's dark
+/// theme. Hue is preserved while dark colors are lifted so they stay
+/// readable against the surface.
+fn parse_text_color(s: &str) -> Option<gpui::Hsla> {
     let (r, g, b) = parse_rgb(s)?;
-    Some(remap_for_dark_bg(r, g, b))
+    Some(remap_text_color_for_dark_theme(r, g, b))
+}
+
+/// Parse an HTML color value for backgrounds on the app's dark theme.
+/// Unlike text colors, backgrounds should stay subdued so chips and
+/// panels do not turn into bright glowing blocks.
+fn parse_bg_color(s: &str) -> Option<gpui::Hsla> {
+    let (r, g, b) = parse_rgb(s)?;
+    Some(remap_bg_color_for_dark_theme(r, g, b))
 }
 
 fn parse_rgb(s: &str) -> Option<(u8, u8, u8)> {
@@ -375,11 +564,10 @@ fn named_color(s: &str) -> Option<(u8, u8, u8)> {
     })
 }
 
-/// Remap a CSS color for a dark background. We lift the lightness so
-/// it reads against the surface and cap saturation so primary colors
-/// don't burn — pure red / magenta at 100% saturation are jarring on
-/// dark themes.
-fn remap_for_dark_bg(r: u8, g: u8, b: u8) -> gpui::Hsla {
+/// Remap a CSS text color for a dark background. We lift the lightness
+/// so it reads against the surface and cap saturation so primary colors
+/// don't burn on dark themes.
+fn remap_text_color_for_dark_theme(r: u8, g: u8, b: u8) -> gpui::Hsla {
     let r = r as f32 / 255.0;
     let g = g as f32 / 255.0;
     let b = b as f32 / 255.0;
@@ -399,6 +587,36 @@ fn remap_for_dark_bg(r: u8, g: u8, b: u8) -> gpui::Hsla {
     gpui::rgb((r << 16) | (g << 8) | b).into()
 }
 
+/// Remap a CSS background color for the app's dark theme. Neutral
+/// backgrounds become dark panels; colored backgrounds keep their hue
+/// but stay darker than text-oriented remapping so white text still
+/// contrasts well.
+fn remap_bg_color_for_dark_theme(r: u8, g: u8, b: u8) -> gpui::Hsla {
+    let r = r as f32 / 255.0;
+    let g = g as f32 / 255.0;
+    let b = b as f32 / 255.0;
+    let (h, mut s, mut l) = rgb_to_hsl(r, g, b);
+
+    if s < 0.08 {
+        s = 0.0;
+        l = l.clamp(0.14, 0.22);
+    } else {
+        const MIN_L: f32 = 0.24;
+        const MAX_L: f32 = 0.40;
+        const MAX_S: f32 = 0.60;
+        l = l.clamp(MIN_L, MAX_L);
+        if s > MAX_S {
+            s = MAX_S;
+        }
+    }
+
+    let (r, g, b) = hsl_to_rgb(h, s, l);
+    let r = (r * 255.0).round().clamp(0.0, 255.0) as u32;
+    let g = (g * 255.0).round().clamp(0.0, 255.0) as u32;
+    let b = (b * 255.0).round().clamp(0.0, 255.0) as u32;
+    gpui::rgb((r << 16) | (g << 8) | b).into()
+}
+
 fn rgb_to_hsl(r: f32, g: f32, b: f32) -> (f32, f32, f32) {
     let max = r.max(g).max(b);
     let min = r.min(g).min(b);
@@ -407,7 +625,11 @@ fn rgb_to_hsl(r: f32, g: f32, b: f32) -> (f32, f32, f32) {
     if d < 1e-6 {
         return (0.0, 0.0, l);
     }
-    let s = if l > 0.5 { d / (2.0 - max - min) } else { d / (max + min) };
+    let s = if l > 0.5 {
+        d / (2.0 - max - min)
+    } else {
+        d / (max + min)
+    };
     let h = if (max - r).abs() < 1e-6 {
         (g - b) / d + if g < b { 6.0 } else { 0.0 }
     } else if (max - g).abs() < 1e-6 {
@@ -422,7 +644,11 @@ fn hsl_to_rgb(h: f32, s: f32, l: f32) -> (f32, f32, f32) {
     if s.abs() < 1e-6 {
         return (l, l, l);
     }
-    let q = if l < 0.5 { l * (1.0 + s) } else { l + s - l * s };
+    let q = if l < 0.5 {
+        l * (1.0 + s)
+    } else {
+        l + s - l * s
+    };
     let p = 2.0 * l - q;
     let h = h / 360.0;
     (

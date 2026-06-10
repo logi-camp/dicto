@@ -1,9 +1,9 @@
 use std::path::PathBuf;
 
 use gpui::{
-    AsyncApp, div, px, AppContext as _, Context, Entity, ExternalPaths, FontWeight,
-    InteractiveElement, IntoElement, ParentElement, PathPromptOptions, SharedString,
-    StatefulInteractiveElement, Styled, Window,
+    AppContext as _, AsyncApp, Context, Entity, ExternalPaths, FontWeight, InteractiveElement,
+    IntoElement, ParentElement, PathPromptOptions, SharedString, StatefulInteractiveElement,
+    Styled, Window, div, px,
 };
 use gpui_component::{h_flex, progress::Progress, scroll::ScrollableElement, v_flex};
 use mdict_rs::settings::DictEntry;
@@ -11,8 +11,7 @@ use tracing::warn;
 
 use crate::{
     app::DictApp,
-    colors,
-    indexing,
+    colors, indexing,
     state::{DictState, ImportFile, ImportStatus},
 };
 
@@ -25,9 +24,11 @@ pub fn overlay(
         return div().into_any_element();
     }
 
-    let is_importing = state.read(cx).import_files.iter().any(|f| {
-        matches!(f.status, ImportStatus::Copying | ImportStatus::Indexing)
-    });
+    let is_importing = state
+        .read(cx)
+        .import_files
+        .iter()
+        .any(|f| matches!(f.status, ImportStatus::Copying | ImportStatus::Indexing));
 
     div()
         .id("init-modal-backdrop")
@@ -38,7 +39,12 @@ pub fn overlay(
         .flex()
         .items_center()
         .justify_center()
-        .bg(gpui::Hsla { h: 0.0, s: 0.0, l: 0.05, a: 0.88 })
+        .bg(gpui::Hsla {
+            h: 0.0,
+            s: 0.0,
+            l: 0.05,
+            a: 0.88,
+        })
         .child(card(state, is_importing, cx))
         .into_any_element()
 }
@@ -195,10 +201,7 @@ pub fn import_tab_content(
                                 div()
                                     .text_size(px(11.))
                                     .text_color(colors::text_secondary())
-                                    .child(SharedString::from(format!(
-                                        "{:.0}%",
-                                        progress_pct
-                                    ))),
+                                    .child(SharedString::from(format!("{:.0}%", progress_pct))),
                             ),
                     )
                     .child(Progress::new("import-overall-progress").value(progress_pct)),
@@ -206,7 +209,11 @@ pub fn import_tab_content(
         } else {
             None
         })
-        .children(if has_files { Some(file_list(state, cx)) } else { None })
+        .children(if has_files {
+            Some(file_list(state, cx))
+        } else {
+            None
+        })
         .into_any_element()
 }
 
@@ -264,9 +271,7 @@ fn drop_zone(state: Entity<DictState>, is_importing: bool) -> gpui::AnyElement {
                             files: true,
                             directories: false,
                             multiple: true,
-                            prompt: Some(SharedString::from(
-                                "Select MDict Files (.mdx / .mdd)",
-                            )),
+                            prompt: Some(SharedString::from("Select MDict Files (.mdx / .mdd)")),
                         })
                     });
                     if let Ok(Ok(Some(paths))) = rx.await {
@@ -317,28 +322,31 @@ fn file_list(state: Entity<DictState>, cx: &Context<DictApp>) -> gpui::AnyElemen
     // The Scrollable wrapper from overflow_y_scrollbar() inherits only `size`
     // from the inner element, losing flex_grow. Giving the inner element h_full()
     // and wrapping it in a flex_1 div fixes the scroll height resolution.
-    div()
-        .flex_1()
-        .min_h(px(0.))
-        .child(list)
-        .into_any_element()
+    div().flex_1().min_h(px(0.)).child(list).into_any_element()
 }
 
 fn file_row(idx: usize, file: &ImportFile) -> gpui::AnyElement {
     let (status_text, color) = match &file.status {
-        ImportStatus::Pending => (
-            "Waiting…".to_string(),
-            colors::text_secondary(),
-        ),
+        ImportStatus::Pending => ("Waiting…".to_string(), colors::text_secondary()),
         ImportStatus::Copying => ("Copying…".to_string(), colors::primary()),
         ImportStatus::Indexing => ("Building index…".to_string(), colors::primary()),
         ImportStatus::Done => (
             "✓ Imported".to_string(),
-            gpui::Hsla { h: 0.33, s: 0.6, l: 0.5, a: 1.0 },
+            gpui::Hsla {
+                h: 0.33,
+                s: 0.6,
+                l: 0.5,
+                a: 1.0,
+            },
         ),
         ImportStatus::Error(msg) => (
             format!("✗ {msg}"),
-            gpui::Hsla { h: 0.0, s: 0.7, l: 0.5, a: 1.0 },
+            gpui::Hsla {
+                h: 0.0,
+                s: 0.7,
+                l: 0.5,
+                a: 1.0,
+            },
         ),
     };
 
@@ -406,9 +414,7 @@ pub fn start_import(paths: Vec<PathBuf>, state: Entity<DictState>, cx: &mut gpui
             s.import_files.push(ImportFile {
                 path: path.clone(),
                 name,
-                status: ImportStatus::Error(
-                    "Only .mdx and .mdd files are supported".into(),
-                ),
+                status: ImportStatus::Error("Only .mdx and .mdd files are supported".into()),
             });
         }
         for path in &valid {
@@ -442,9 +448,8 @@ pub fn start_import(paths: Vec<PathBuf>, state: Entity<DictState>, cx: &mut gpui
                 cx.update_entity(&state, |s, cx| {
                     for idx in valid_start..valid_end {
                         if let Some(f) = s.import_files.get_mut(idx) {
-                            f.status = ImportStatus::Error(format!(
-                                "Cannot create dicts directory: {e}"
-                            ));
+                            f.status =
+                                ImportStatus::Error(format!("Cannot create dicts directory: {e}"));
                         }
                     }
                     cx.notify();
@@ -473,8 +478,7 @@ pub fn start_import(paths: Vec<PathBuf>, state: Entity<DictState>, cx: &mut gpui
                 cx.update(|cx| {
                     cx.update_entity(&state, |s, cx| {
                         if let Some(f) = s.import_files.get_mut(idx) {
-                            f.status =
-                                ImportStatus::Error(format!("Copy failed: {e}"));
+                            f.status = ImportStatus::Error(format!("Copy failed: {e}"));
                         }
                         cx.notify();
                     });
@@ -514,9 +518,10 @@ pub fn start_import(paths: Vec<PathBuf>, state: Entity<DictState>, cx: &mut gpui
             cx.update(|_cx| {
                 let mut settings = mdict_rs::settings::current();
                 if !settings.dictionaries.iter().any(|d| d.path == dest_str) {
-                    settings
-                        .dictionaries
-                        .push(DictEntry { path: dest_str.clone(), enabled: true });
+                    settings.dictionaries.push(DictEntry {
+                        path: dest_str.clone(),
+                        enabled: true,
+                    });
                     if let Err(e) = mdict_rs::settings::update(settings) {
                         warn!("init_modal: failed to update settings for {dest_str}: {e}");
                     }
@@ -540,8 +545,7 @@ pub fn start_import(paths: Vec<PathBuf>, state: Entity<DictState>, cx: &mut gpui
                 cx.update(|cx| {
                     cx.update_entity(&state, |s, cx| {
                         if let Some(f) = s.import_files.get_mut(idx) {
-                            f.status =
-                                ImportStatus::Error(format!("Index failed: {e}"));
+                            f.status = ImportStatus::Error(format!("Index failed: {e}"));
                         }
                         cx.notify();
                     });

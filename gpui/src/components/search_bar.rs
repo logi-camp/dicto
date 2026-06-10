@@ -1,6 +1,5 @@
 use gpui::{
-    AppContext as _, InteractiveElement, IntoElement, KeyDownEvent,
-    ParentElement, Styled, px,
+    AppContext as _, InteractiveElement, IntoElement, KeyDownEvent, ParentElement, Styled, px,
 };
 use gpui_component::{
     h_flex,

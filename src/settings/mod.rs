@@ -7,8 +7,8 @@
 
 use std::fs;
 use std::path::PathBuf;
-use std::sync::RwLock;
 use std::sync::LazyLock;
+use std::sync::RwLock;
 
 use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
@@ -107,7 +107,11 @@ fn save(s: &Settings) -> anyhow::Result<()> {
     }
     let body = toml::to_string_pretty(s)?;
     fs::write(&path, body)?;
-    info!("settings: saved {} entries to {}", s.dictionaries.len(), path.display());
+    info!(
+        "settings: saved {} entries to {}",
+        s.dictionaries.len(),
+        path.display()
+    );
     Ok(())
 }
 

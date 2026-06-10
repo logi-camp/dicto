@@ -15,7 +15,8 @@ use crate::state::DictState;
 /// Spawn background indexing on the AsyncApp's background executor.
 /// Cheap to call when everything is already indexed — it just no-ops.
 pub fn spawn(state: Entity<DictState>, cx: &mut gpui::App) {
-    cx.spawn(async move |cx: &mut AsyncApp| run(state, cx).await).detach();
+    cx.spawn(async move |cx: &mut AsyncApp| run(state, cx).await)
+        .detach();
 }
 
 async fn run(state: Entity<DictState>, cx: &mut AsyncApp) {
@@ -43,18 +44,22 @@ async fn run(state: Entity<DictState>, cx: &mut AsyncApp) {
         return;
     }
 
-    let _ = cx.update(|app| app.update_entity(&state, |s, cx| {
-        s.indexing_total = total;
-        s.indexing_done = 0;
-        s.indexing_current = pending.first().map(|(_, n)| n.clone());
-        cx.notify();
-    }));
+    let _ = cx.update(|app| {
+        app.update_entity(&state, |s, cx| {
+            s.indexing_total = total;
+            s.indexing_done = 0;
+            s.indexing_current = pending.first().map(|(_, n)| n.clone());
+            cx.notify();
+        })
+    });
 
     for (i, (path, name)) in pending.into_iter().enumerate() {
-        let _ = cx.update(|app| app.update_entity(&state, |s, cx| {
-            s.indexing_current = Some(name.clone());
-            cx.notify();
-        }));
+        let _ = cx.update(|app| {
+            app.update_entity(&state, |s, cx| {
+                s.indexing_current = Some(name.clone());
+                cx.notify();
+            })
+        });
 
         let path_clone = path.clone();
         let result = cx
@@ -75,18 +80,22 @@ async fn run(state: Entity<DictState>, cx: &mut AsyncApp) {
         mdict_rs::registry::reload();
         load_stylesheets();
 
-        let _ = cx.update(|app| app.update_entity(&state, |s, cx| {
-            s.indexing_done = i + 1;
-            cx.notify();
-        }));
+        let _ = cx.update(|app| {
+            app.update_entity(&state, |s, cx| {
+                s.indexing_done = i + 1;
+                cx.notify();
+            })
+        });
     }
 
-    let _ = cx.update(|app| app.update_entity(&state, |s, cx| {
-        s.indexing_total = 0;
-        s.indexing_done = 0;
-        s.indexing_current = None;
-        cx.notify();
-    }));
+    let _ = cx.update(|app| {
+        app.update_entity(&state, |s, cx| {
+            s.indexing_total = 0;
+            s.indexing_done = 0;
+            s.indexing_current = None;
+            cx.notify();
+        })
+    });
 
     info!("background indexing complete");
 }
@@ -103,7 +112,9 @@ pub fn load_stylesheets() {
     for mdx in mdict_rs::settings::enabled_mdx() {
         let path = PathBuf::from(&mdx);
         let Some(dir) = path.parent() else { continue };
-        let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else { continue };
+        let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
+            continue;
+        };
 
         let mut sheet = html::Stylesheet::default();
 
@@ -116,7 +127,8 @@ pub fn load_stylesheets() {
                 .flatten()
                 .map(|e| e.path())
                 .filter(|p| {
-                    p.extension().map_or(false, |e| e.eq_ignore_ascii_case("css"))
+                    p.extension()
+                        .map_or(false, |e| e.eq_ignore_ascii_case("css"))
                         && css_belongs_to(p, stem)
                 })
                 .collect();

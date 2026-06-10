@@ -77,14 +77,21 @@ pub fn parse_key_block_header<'a>(data: &'a [u8], header: &Header) -> (&'a [u8],
     let kbh = if header.version >= 2 {
         let buf = r.bytes(40);
         let checksum = r.be_u32();
-        assert_eq!(adler32(buf).unwrap(), checksum, "key block header checksum mismatch");
+        assert_eq!(
+            adler32(buf).unwrap(),
+            checksum,
+            "key block header checksum mismatch"
+        );
         let mut br = Reader::new(buf);
         let _block_num = br.be_u64();
         let _entry_num = br.be_u64();
         let _info_dsize = br.be_u64();
         let info_len = br.be_u64() as usize;
         let blocks_len = br.be_u64() as usize;
-        KeyBlockHeader { key_block_info_len: info_len, key_blocks_len: blocks_len }
+        KeyBlockHeader {
+            key_block_info_len: info_len,
+            key_blocks_len: blocks_len,
+        }
     } else {
         let buf = r.bytes(16);
         let mut br = Reader::new(buf);
@@ -92,7 +99,10 @@ pub fn parse_key_block_header<'a>(data: &'a [u8], header: &Header) -> (&'a [u8],
         let _entry_num = br.be_u32();
         let info_len = br.be_u32() as usize;
         let blocks_len = br.be_u32() as usize;
-        KeyBlockHeader { key_block_info_len: info_len, key_blocks_len: blocks_len }
+        KeyBlockHeader {
+            key_block_info_len: info_len,
+            key_blocks_len: blocks_len,
+        }
     };
     (r.remaining(), kbh)
 }
@@ -109,7 +119,11 @@ pub fn parse_key_block_info<'a>(
 
     let sizes = if header.version >= 2 {
         // First 4 bytes must be 0x02000000; may be encrypted+zlib-compressed.
-        assert_eq!(&buf[0..4], b"\x02\x00\x00\x00", "key block info magic mismatch");
+        assert_eq!(
+            &buf[0..4],
+            b"\x02\x00\x00\x00",
+            "key block info magic mismatch"
+        );
         let mut decompressed = Vec::new();
         if header.encrypted & 0x02 != 0 {
             // Encrypt key: ripemd128(checksum_bytes ++ 0x3695_le32)
@@ -119,9 +133,13 @@ pub fn parse_key_block_info<'a>(
             md.update(&seed);
             let key = md.finalize();
             let decrypted = fast_decrypt(&buf[8..], &key);
-            ZlibDecoder::new(&decrypted[..]).read_to_end(&mut decompressed).unwrap();
+            ZlibDecoder::new(&decrypted[..])
+                .read_to_end(&mut decompressed)
+                .unwrap();
         } else {
-            ZlibDecoder::new(&buf[8..]).read_to_end(&mut decompressed).unwrap();
+            ZlibDecoder::new(&buf[8..])
+                .read_to_end(&mut decompressed)
+                .unwrap();
         }
         decode_info_v2(&decompressed, &header.encoding)
     } else {
@@ -212,7 +230,10 @@ fn decompress_block(buf: &[u8], csize: usize, dsize: usize) -> Vec<u8> {
         1 => {
             let mut out = vec![0u8; dsize];
             let (_, err) = rust_lzo::LZOContext::decompress_to_slice(&plain, &mut out);
-            assert!(err == rust_lzo::LZOError::OK, "LZO key block decompression failed");
+            assert!(
+                err == rust_lzo::LZOError::OK,
+                "LZO key block decompression failed"
+            );
             out
         }
         2 => {
@@ -260,7 +281,10 @@ fn decode_key_entries(data: &[u8], encoding: &str, offset_size: usize, out: &mut
         };
 
         let text = decode_text(&data[pos..pos + text_len], encoding);
-        out.push(KeyEntry { text, record_offset: offset });
+        out.push(KeyEntry {
+            text,
+            record_offset: offset,
+        });
         pos += text_len + term;
     }
 }

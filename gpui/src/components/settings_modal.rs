@@ -1,8 +1,12 @@
 use gpui::{
-    AppContext as _, div, px, Context, Entity, FontWeight, InteractiveElement, IntoElement,
-    ParentElement, StatefulInteractiveElement, Styled, Window,
+    AppContext as _, Context, Entity, FontWeight, InteractiveElement, IntoElement, ParentElement,
+    StatefulInteractiveElement, Styled, Window, div, px,
 };
-use gpui_component::{h_flex, tab::{Tab, TabBar}, v_flex};
+use gpui_component::{
+    h_flex,
+    tab::{Tab, TabBar},
+    v_flex,
+};
 
 use crate::{
     app::DictApp,
@@ -37,7 +41,12 @@ pub fn overlay(
         .flex()
         .items_center()
         .justify_center()
-        .bg(gpui::Hsla { h: 0.0, s: 0.0, l: 0.05, a: 0.88 })
+        .bg(gpui::Hsla {
+            h: 0.0,
+            s: 0.0,
+            l: 0.05,
+            a: 0.88,
+        })
         .child(modal_card(state, active_tab, is_importing, window, cx))
         .into_any_element()
 }

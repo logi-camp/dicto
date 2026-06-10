@@ -135,9 +135,7 @@ fn decode_via_ffmpeg(bytes: &[u8], out_path: &Path) -> bool {
 
     match result {
         Err(e) => {
-            warn!(
-                "audio: ffmpeg not available ({e}); install ffmpeg to enable .spx playback"
-            );
+            warn!("audio: ffmpeg not available ({e}); install ffmpeg to enable .spx playback");
             false
         }
         Ok(output) if !output.status.success() => {

@@ -49,12 +49,18 @@ pub fn discover_mdd_files() -> Vec<String> {
 }
 
 fn collect_files_with_ext(dir: &PathBuf, ext: &str, out: &mut Vec<String>) {
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() {
             collect_files_with_ext(&path, ext, out);
-        } else if path.extension().map(|e| e.eq_ignore_ascii_case(ext)).unwrap_or(false) {
+        } else if path
+            .extension()
+            .map(|e| e.eq_ignore_ascii_case(ext))
+            .unwrap_or(false)
+        {
             if let Some(s) = path.to_str() {
                 out.push(s.to_string());
             }

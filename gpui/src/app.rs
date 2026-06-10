@@ -1,19 +1,14 @@
 use std::time::Duration;
 
 use gpui::{
-    div, px, AppContext as _, Context, Entity, FontWeight, InteractiveElement, IntoElement,
-    KeyDownEvent, ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Window,
+    AppContext as _, Context, Entity, FontWeight, InteractiveElement, IntoElement, KeyDownEvent,
+    ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Window, div, px,
 };
-use gpui_component::{
-    h_flex,
-    input::InputState,
-    v_flex, Root, TitleBar,
-};
+use gpui_component::{Root, TitleBar, h_flex, input::InputState, v_flex};
 
 use crate::colors;
 use crate::components::{
-    detail_panel,
-    init_modal,
+    detail_panel, init_modal,
     search_bar::{self, SearchBarProps},
     settings_modal,
     word_list::{self, WordListProps},
@@ -86,10 +81,8 @@ impl DictApp {
                 // every intermediate keystroke.
                 if auto_select.is_some() {
                     // Read the first suggestion to preview.
-                    let Some(word) = cx
-                        .update_entity(&dict_state, |s, _cx| {
-                            s.suggestions.first().cloned()
-                        })
+                    let Some(word) =
+                        cx.update_entity(&dict_state, |s, _cx| s.suggestions.first().cloned())
                     else {
                         return;
                     };
@@ -101,11 +94,10 @@ impl DictApp {
                     // Re-read state after the quiet period — if the
                     // user typed more, the suggestions will have
                     // changed and we should skip this stale preview.
-                    let should_preview = cx
-                        .update_entity(&dict_state, |s, _cx| {
-                            s.selected_suggestion == Some(0)
-                                && s.result_word.as_deref() != Some(word.as_str())
-                        });
+                    let should_preview = cx.update_entity(&dict_state, |s, _cx| {
+                        s.selected_suggestion == Some(0)
+                            && s.result_word.as_deref() != Some(word.as_str())
+                    });
 
                     if should_preview {
                         let word_for_result = word.clone();
@@ -117,7 +109,10 @@ impl DictApp {
                                     .map(|hit| {
                                         let blocks =
                                             crate::html::parse_styled(&hit.definition, &hit.name);
-                                        DictResult { name: hit.name, blocks }
+                                        DictResult {
+                                            name: hit.name,
+                                            blocks,
+                                        }
                                     })
                                     .collect::<Vec<_>>()
                             })
@@ -170,7 +165,10 @@ impl DictApp {
                         .into_iter()
                         .map(|hit| {
                             let blocks = crate::html::parse_styled(&hit.definition, &hit.name);
-                            DictResult { name: hit.name, blocks }
+                            DictResult {
+                                name: hit.name,
+                                blocks,
+                            }
                         })
                         .collect::<Vec<_>>()
                 })
@@ -228,7 +226,9 @@ impl Render for DictApp {
                     .min_h(px(0.))
                     .w_full()
                     .child(word_list::word_list(
-                        WordListProps { state: self.state.clone() },
+                        WordListProps {
+                            state: self.state.clone(),
+                        },
                         cx,
                     ))
                     .child(detail_panel::detail_panel(self.state.clone(), cx)),
@@ -271,7 +271,11 @@ fn indexing_bar(state: &Entity<DictState>, cx: &Context<DictApp>) -> gpui::AnyEl
 
     let done = s.indexing_done;
     let total = s.indexing_total;
-    let pct = if total == 0 { 0.0 } else { (done as f32 / total as f32).clamp(0.0, 1.0) };
+    let pct = if total == 0 {
+        0.0
+    } else {
+        (done as f32 / total as f32).clamp(0.0, 1.0)
+    };
     let label = match &s.indexing_current {
         Some(name) => format!("Indexing {done}/{total} — {name}"),
         None => format!("Indexing {done}/{total}"),

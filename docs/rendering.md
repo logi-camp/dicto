@@ -73,13 +73,22 @@ For each `Event::Open`:
    `<h1..6>`, `<ul>`, `<ol>`, `<li>`, `<table>`, `<tr>`: flush the
    current inline buffer as a Paragraph.
 4. Build a merged style: clone the parent (text properties only —
-   margins reset to zero, they don't inherit), apply hard-coded tag
-   rules (`<b>` → bold, `<i>` → italic, `<u>` → underline,
-   `<font color>` → color), then apply CSS decls.
+   margins reset to zero, they don't inherit), clear `bg_color` for
+   block-level elements so backgrounds attach to the wrapper instead
+   of every child run, apply hard-coded tag rules (`<b>` → bold,
+   `<i>` → italic, `<u>` → underline, `<sup>` / `<sub>` →
+   reduced-size baseline shifts, `<font color>` → color), then apply
+   CSS decls.
 5. Push the merged style + the OpenElement.
 6. Run tag-specific side effects: `<a>` pushes onto `link_stack`,
    `<ul>` / `<ol>` push onto `list_stack`, `<hN>` records the level
    in `pending_heading` for the matching close to flush as Heading.
+
+Some dictionary-specific wrappers are intentionally treated as inline
+despite being `<div>` elements. `mwaled` uses `div.scnt`,
+`div.sense`, and `div.sblock_labels` as float-heavy structural
+wrappers; keeping them block-level caused sense numbers and labels to
+split across multiple lines.
 
 `Event::Close` walks `element_stack` *backwards* to find a matching
 tag, auto-closes anything in between (forgiving parser), then pops
@@ -91,15 +100,19 @@ silently discarded.
 ```rust
 pub struct Style {
     pub bold, italic, underline: bool,
+    pub superscript, subscript: bool,
     pub color, bg_color: Option<SharedString>,
     pub font_size_px: Option<f32>,
+    pub padding_top_px, padding_right_px, padding_bottom_px, padding_left_px: f32,
+    pub margin_right_px, border_radius_px: f32,
     pub margin_top_px, margin_bottom_px, margin_left_px: f32,
 }
 ```
 
 **Text properties inherit** (clone from parent before mutating).
 **Margins do not** (reset to zero each open) — matches CSS box
-semantics.
+semantics. Inline box-model fields are kept because some dictionaries
+style anchors as chips / buttons rather than plain text spans.
 
 ### Inline buffer & cross-run whitespace
 
@@ -127,12 +140,13 @@ pub enum Block {
 
 pub struct BlockLayout {
     pub margin_top_px, margin_bottom_px, margin_left_px: f32,
+    pub bg_color: Option<SharedString>,
 }
 ```
 
 `BlockLayout` is captured from the current style frame at flush
-time, so margins set via CSS on the block element propagate to the
-emitted `Block`.
+time, so margins and block-level backgrounds set via CSS on the block
+element propagate to the emitted `Block`.
 
 ## CSS subset (css.rs)
 
@@ -166,7 +180,10 @@ Declarations we honor:
 | `text-decoration: ...underline...` | `Style.underline = true`. |
 | `font-size: 12px / 1.2em / 14pt / 110%` | `Style.font_size_px`. |
 | `margin-top / -bottom / -left` | block layout fields. |
+| `margin-right` | inline chip spacing. |
 | `margin` (1, 2, or 4 values) | shorthand → block layout fields. |
+| `padding-*`, `padding` | inline chip padding. |
+| `border-radius` | inline chip rounding. |
 
 Length units accepted: `px` (default), `em`, `rem`, `pt` (× 1.333),
 `%` (treated as % of 14 px base font), plain numbers (= px).
@@ -222,10 +239,15 @@ content off-screen.
 
 ### Inline runs
 
-`render_run` makes one element per `Inline`. Two specializations:
+`render_run` makes one element per `Inline`. Three specializations:
 
-- **Sound link** — render as `sound_button(label, path)`. The button
-  is the only inline that gets a pill-shaped background.
+- **Sound link with image child** — render the dictionary-provided
+  image resource (for example speaker icons from an MDD) as
+  a clickable audio button.
+- **Sound link without inline content** — synthesize a fallback audio
+  control on close. `mwaled` uses empty icon-font anchors, so we keep
+  the anchor's color / font-size / spacing and render a modern SVG
+  play icon from the UI assets.
 - **Entry link** — stateful div with `cursor_pointer` + `on_click`
   (currently just logs; wiring it back to the search bar is a
   follow-up).
@@ -234,18 +256,35 @@ All other runs are plain styled `div`s with no `.id(...)` — they
 don't need state. Dropping per-run ids saved an allocation per run
 per frame on the previous performance pass.
 
+### Grouped styled links
+
+Some dictionaries style a whole `<a>` as a chip
+while nesting multiple child spans inside it:
+
+```html
+<a href="#entry_1"><span class="kw">very<sup>1</sup></span> <i>adverb</i></a>
+```
+
+Rendering each child independently loses the shared background,
+padding, and border radius. The renderer now groups consecutive runs
+belonging to the same entry / external link when the first run carries
+box-model styling, then applies the chip container styles once around
+the whole group.
+
 ### Color remap for dark theme
 
-`parse_color` → `remap_for_dark_bg(r, g, b)`. Converts to HSL,
-applies:
+Foreground text and backgrounds now use different remaps:
 
-- `MIN_L = 0.65` — lift lightness if below.
-- `MAX_S = 0.75` — cap saturation.
+- `parse_text_color` → `remap_text_color_for_dark_theme` lifts dark
+  colors (`MIN_L = 0.65`) and caps saturation (`MAX_S = 0.75`) so
+  dictionary-defined text remains readable.
+- `parse_bg_color` → `remap_bg_color_for_dark_theme` keeps neutral
+  panels dark and caps colored backgrounds to a darker range so chip
+  backgrounds do not glow or lose contrast with white text.
 
 This keeps a dictionary's semantic palette (blue = entry link, green
-= register label, orange = sense heading) recognizable but readable
-on a dark surface. Without the saturation cap pure red (`#ff0000`)
-burned the eye.
+= register label, orange = sense heading) recognizable while avoiding
+washed-out chips and pale header bars on Dicto's dark UI.
 
 CSS named colors (`red`, `navy`, `teal`, …) and `#rgb` / `#rrggbb`
 hex forms are recognized; everything else falls back to default

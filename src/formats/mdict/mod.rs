@@ -38,12 +38,14 @@ fn encode_offset(file_offset: u64, csize: u32, dsize: u32, start: u32, end: u32)
 }
 
 fn decode_offset(b: &[u8]) -> Option<(u64, u32, u32, u32, u32)> {
-    if b.len() < REC_LEN { return None; }
+    if b.len() < REC_LEN {
+        return None;
+    }
     let file_offset = u64::from_le_bytes(b[0..8].try_into().unwrap());
-    let csize       = u32::from_le_bytes(b[8..12].try_into().unwrap());
-    let dsize       = u32::from_le_bytes(b[12..16].try_into().unwrap());
-    let start       = u32::from_le_bytes(b[16..20].try_into().unwrap());
-    let end         = u32::from_le_bytes(b[20..24].try_into().unwrap());
+    let csize = u32::from_le_bytes(b[8..12].try_into().unwrap());
+    let dsize = u32::from_le_bytes(b[12..16].try_into().unwrap());
+    let start = u32::from_le_bytes(b[16..20].try_into().unwrap());
+    let end = u32::from_le_bytes(b[20..24].try_into().unwrap());
     Some((file_offset, csize, dsize, start, end))
 }
 
@@ -91,7 +93,14 @@ fn read_block_at(file: &File, offset: u64, len: usize) -> std::io::Result<Vec<u8
     Ok(buf)
 }
 
-fn read_entry(file: &File, file_offset: u64, csize: u32, dsize: u32, start: u32, end: u32) -> Option<Vec<u8>> {
+fn read_entry(
+    file: &File,
+    file_offset: u64,
+    csize: u32,
+    dsize: u32,
+    start: u32,
+    end: u32,
+) -> Option<Vec<u8>> {
     let block = read_block_at(file, file_offset, csize as usize).ok()?;
     let decompressed = decompress_record_block(&block, csize as usize, dsize as usize).ok()?;
     let end = (end as usize).min(decompressed.len());
@@ -121,7 +130,11 @@ impl MdxDictionary {
 
         let mdd_path = {
             let p = PathBuf::from(mdx_path).with_extension("mdd");
-            if p.exists() { Some(p.to_string_lossy().into_owned()) } else { None }
+            if p.exists() {
+                Some(p.to_string_lossy().into_owned())
+            } else {
+                None
+            }
         };
 
         MdxDictionary {
@@ -261,7 +274,9 @@ impl Dictionary for MdxDictionary {
     }
 
     fn suggestions(&self, prefix: &str, limit: usize) -> Vec<String> {
-        let Some(idx) = self.open_fst() else { return vec![] };
+        let Some(idx) = self.open_fst() else {
+            return vec![];
+        };
         let p = prefix.to_lowercase();
 
         let mut results: Vec<String> = Vec::new();
@@ -274,7 +289,9 @@ impl Dictionary for MdxDictionary {
                 seen.insert(s.to_string());
                 results.push(s.to_string());
             }
-            if results.len() >= limit { break; }
+            if results.len() >= limit {
+                break;
+            }
         }
 
         // Fuzzy supplement: fill remaining slots when query is long enough to
@@ -289,7 +306,9 @@ impl Dictionary for MdxDictionary {
                             results.push(s.to_string());
                         }
                     }
-                    if results.len() >= limit { break; }
+                    if results.len() >= limit {
+                        break;
+                    }
                 }
             }
         }
@@ -310,14 +329,22 @@ impl Dictionary for MdxDictionary {
     }
 
     fn css_resources(&self) -> Vec<(String, String)> {
-        let Some(idx) = self.open_mdd_fst() else { return vec![] };
+        let Some(idx) = self.open_mdd_fst() else {
+            return vec![];
+        };
         let mut stream = idx.map.search(AlwaysMatch).into_stream();
         let mut results = Vec::new();
         while let Some((key, row)) = stream.next() {
-            let Ok(name) = std::str::from_utf8(key) else { continue };
-            if !name.ends_with(".css") { continue; }
+            let Ok(name) = std::str::from_utf8(key) else {
+                continue;
+            };
+            if !name.ends_with(".css") {
+                continue;
+            }
             let start = row as usize * REC_LEN;
-            let Some(rec) = idx.offsets.get(start..start + REC_LEN) else { continue };
+            let Some(rec) = idx.offsets.get(start..start + REC_LEN) else {
+                continue;
+            };
             let rec = rec.to_vec();
             if let Some(data) = self.read_mdd_entry_bytes(&rec) {
                 let body = String::from_utf8_lossy(&data).into_owned();
@@ -338,7 +365,9 @@ impl Dictionary for MdxDictionary {
 
     fn index_ready(&self) -> bool {
         let mdx_ready = PathBuf::from(format!("{}.fst", self.mdx_path)).exists();
-        let mdd_ready = self.mdd_path.as_ref()
+        let mdd_ready = self
+            .mdd_path
+            .as_ref()
             .map(|p| PathBuf::from(format!("{p}.fst")).exists())
             .unwrap_or(true);
         mdx_ready && mdd_ready
@@ -364,9 +393,21 @@ fn build_mdx_index(file: &str, force: bool) -> anyhow::Result<()> {
     let mdx = Mdx::parse(&mmap);
 
     // lowercase + sort + dedup (keep first occurrence of each lowercased key)
-    let mut entries: Vec<(String, [u8; REC_LEN])> = mdx.entries.iter()
-        .map(|e| (e.text.to_lowercase(),
-                  encode_offset(e.file_offset, e.block_csize, e.block_dsize, e.start_in_block, e.end_in_block)))
+    let mut entries: Vec<(String, [u8; REC_LEN])> = mdx
+        .entries
+        .iter()
+        .map(|e| {
+            (
+                e.text.to_lowercase(),
+                encode_offset(
+                    e.file_offset,
+                    e.block_csize,
+                    e.block_dsize,
+                    e.start_in_block,
+                    e.end_in_block,
+                ),
+            )
+        })
         .collect();
     entries.sort_unstable_by(|a, b| a.0.cmp(&b.0));
     entries.dedup_by(|a, b| a.0 == b.0); // a is later; returning true removes a, keeps b (first)
@@ -390,7 +431,9 @@ fn build_mdd_index(file: &str, force: bool) -> anyhow::Result<()> {
     } else {
         true
     };
-    if !needs { return Ok(()); }
+    if !needs {
+        return Ok(());
+    }
     if PathBuf::from(&fst_path).exists() {
         fs::remove_file(&fst_path)?;
         fs::remove_file(&off_path).ok();
@@ -402,9 +445,21 @@ fn build_mdd_index(file: &str, force: bool) -> anyhow::Result<()> {
     let mdd = Mdd::parse(&mmap);
 
     // normalize + sort + dedup (keep first occurrence of each key)
-    let mut entries: Vec<(String, [u8; REC_LEN])> = mdd.entries.iter()
-        .map(|e| (normalize_path(&e.path),
-                  encode_offset(e.file_offset, e.block_csize, e.block_dsize, e.start_in_block, e.end_in_block)))
+    let mut entries: Vec<(String, [u8; REC_LEN])> = mdd
+        .entries
+        .iter()
+        .map(|e| {
+            (
+                normalize_path(&e.path),
+                encode_offset(
+                    e.file_offset,
+                    e.block_csize,
+                    e.block_dsize,
+                    e.start_in_block,
+                    e.end_in_block,
+                ),
+            )
+        })
         .collect();
     entries.sort_unstable_by(|a, b| a.0.cmp(&b.0));
     entries.dedup_by(|a, b| a.0 == b.0);
@@ -421,7 +476,8 @@ fn build_mdd_index(file: &str, force: bool) -> anyhow::Result<()> {
 }
 
 fn mdd_fst_empty(fst_path: &str) -> bool {
-    File::open(fst_path).ok()
+    File::open(fst_path)
+        .ok()
         .and_then(|f| unsafe { Mmap::map(&f) }.ok())
         .and_then(|m| Map::new(m).ok())
         .map(|m| m.len() == 0)
@@ -432,9 +488,16 @@ fn mdd_fst_empty(fst_path: &str) -> bool {
 
 fn parse_link(def: &str) -> Option<String> {
     let rest = def.strip_prefix("@@@LINK=")?;
-    let target: String = rest.chars().take_while(|c| *c != '\r' && *c != '\n' && *c != '\0').collect();
+    let target: String = rest
+        .chars()
+        .take_while(|c| *c != '\r' && *c != '\n' && *c != '\0')
+        .collect();
     let trimmed = target.trim();
-    if trimmed.is_empty() { None } else { Some(trimmed.to_string()) }
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
 }
 
 fn candidate_keys(key: &str) -> Vec<String> {

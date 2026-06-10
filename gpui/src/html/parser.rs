@@ -21,13 +21,25 @@ pub struct BlockLayout {
     pub margin_top_px: f32,
     pub margin_bottom_px: f32,
     pub margin_left_px: f32,
+    pub bg_color: Option<SharedString>,
 }
 
 #[derive(Debug, Clone)]
 pub enum Block {
-    Paragraph { runs: Vec<Inline>, layout: BlockLayout },
-    Heading { level: u8, runs: Vec<Inline>, layout: BlockLayout },
-    ListItem { ordered: bool, depth: u8, content: Vec<Inline> },
+    Paragraph {
+        runs: Vec<Inline>,
+        layout: BlockLayout,
+    },
+    Heading {
+        level: u8,
+        runs: Vec<Inline>,
+        layout: BlockLayout,
+    },
+    ListItem {
+        ordered: bool,
+        depth: u8,
+        content: Vec<Inline>,
+    },
     Divider,
     Image(SharedString),
 }
@@ -37,11 +49,23 @@ pub struct Style {
     pub bold: bool,
     pub italic: bool,
     pub underline: bool,
+    pub superscript: bool,
+    pub subscript: bool,
     pub color: Option<SharedString>,
-    /// Background tint applied behind the inline run.
+    /// Explicit background tint set on this element. This does not
+    /// inherit; block elements consume it via `BlockLayout`, while
+    /// inline elements render it directly on the span.
     pub bg_color: Option<SharedString>,
     /// Explicit font size override in px (CSS `font-size: 14px` / `1em`).
     pub font_size_px: Option<f32>,
+    /// Inline box-model fields used by dictionaries that style links as
+    /// chips/buttons (for example headword jump links).
+    pub padding_top_px: f32,
+    pub padding_right_px: f32,
+    pub padding_bottom_px: f32,
+    pub padding_left_px: f32,
+    pub margin_right_px: f32,
+    pub border_radius_px: f32,
     /// CSS margins, captured per-element. Block-level elements emit a
     /// Paragraph carrying these as `BlockLayout` at flush time.
     pub margin_top_px: f32,
@@ -62,6 +86,10 @@ pub struct Inline {
     pub text: SharedString,
     pub style: Style,
     pub link: Option<Link>,
+    /// When this inline was produced from an <img> inside a sound link,
+    /// this holds the image `src` so the renderer can show a speaker icon
+    /// instead of a plain ▶ pill.
+    pub image: Option<SharedString>,
 }
 
 #[derive(Debug)]
@@ -155,7 +183,11 @@ fn parse_tag(raw: &str) -> Option<Event> {
         return Some(Event::Close(name));
     }
     let self_close = raw.ends_with('/');
-    let body = if self_close { &raw[..raw.len() - 1] } else { raw };
+    let body = if self_close {
+        &raw[..raw.len() - 1]
+    } else {
+        raw
+    };
     let mut parts = body.splitn(2, |c: char| c.is_whitespace());
     let name = parts.next().unwrap_or("").to_lowercase();
     let attrs_str = parts.next().unwrap_or("").trim();
@@ -363,6 +395,7 @@ impl Builder {
             text: SharedString::from(text),
             style: self.current_style(),
             link: self.current_link(),
+            image: None,
         });
     }
 
@@ -390,8 +423,11 @@ impl Builder {
         }
         let runs = std::mem::take(&mut self.inline_buf);
         let layout = self.current_layout();
-        self.blocks
-            .push(Block::Heading { level, runs, layout });
+        self.blocks.push(Block::Heading {
+            level,
+            runs,
+            layout,
+        });
     }
 
     /// Read margin properties off the current style frame as a
@@ -403,6 +439,7 @@ impl Builder {
                 margin_top_px: s.margin_top_px,
                 margin_bottom_px: s.margin_bottom_px,
                 margin_left_px: s.margin_left_px,
+                bg_color: s.bg_color.clone(),
             },
             None => BlockLayout::default(),
         }
@@ -477,6 +514,11 @@ fn apply_decls(decls: &HashMap<String, String>, style: &mut Style) {
                     style.margin_left_px = px;
                 }
             }
+            "margin-right" => {
+                if let Some(px) = parse_css_length(v, 14.0) {
+                    style.margin_right_px = px;
+                }
+            }
             "margin" => {
                 // shorthand: 1-4 values. Treat as uniform when one value.
                 let parts: Vec<&str> = v.split_whitespace().collect();
@@ -498,6 +540,82 @@ fn apply_decls(decls: &HashMap<String, String>, style: &mut Style) {
                             style.margin_left_px = px;
                         }
                     }
+                }
+            }
+            "padding-top" => {
+                if let Some(px) = parse_css_length(v, 14.0) {
+                    style.padding_top_px = px;
+                }
+            }
+            "padding-right" => {
+                if let Some(px) = parse_css_length(v, 14.0) {
+                    style.padding_right_px = px;
+                }
+            }
+            "padding-bottom" => {
+                if let Some(px) = parse_css_length(v, 14.0) {
+                    style.padding_bottom_px = px;
+                }
+            }
+            "padding-left" => {
+                if let Some(px) = parse_css_length(v, 14.0) {
+                    style.padding_left_px = px;
+                }
+            }
+            "padding" => {
+                let parts: Vec<&str> = v.split_whitespace().collect();
+                match parts.as_slice() {
+                    [single] => {
+                        if let Some(px) = parse_css_length(single, 14.0) {
+                            style.padding_top_px = px;
+                            style.padding_right_px = px;
+                            style.padding_bottom_px = px;
+                            style.padding_left_px = px;
+                        }
+                    }
+                    [vertical, horizontal] => {
+                        if let Some(px) = parse_css_length(vertical, 14.0) {
+                            style.padding_top_px = px;
+                            style.padding_bottom_px = px;
+                        }
+                        if let Some(px) = parse_css_length(horizontal, 14.0) {
+                            style.padding_right_px = px;
+                            style.padding_left_px = px;
+                        }
+                    }
+                    [top, horizontal, bottom] => {
+                        if let Some(px) = parse_css_length(top, 14.0) {
+                            style.padding_top_px = px;
+                        }
+                        if let Some(px) = parse_css_length(horizontal, 14.0) {
+                            style.padding_right_px = px;
+                            style.padding_left_px = px;
+                        }
+                        if let Some(px) = parse_css_length(bottom, 14.0) {
+                            style.padding_bottom_px = px;
+                        }
+                    }
+                    [top, right, bottom, left] => {
+                        if let Some(px) = parse_css_length(top, 14.0) {
+                            style.padding_top_px = px;
+                        }
+                        if let Some(px) = parse_css_length(right, 14.0) {
+                            style.padding_right_px = px;
+                        }
+                        if let Some(px) = parse_css_length(bottom, 14.0) {
+                            style.padding_bottom_px = px;
+                        }
+                        if let Some(px) = parse_css_length(left, 14.0) {
+                            style.padding_left_px = px;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            "border-radius" => {
+                let val = v.split_whitespace().next().unwrap_or("");
+                if let Some(px) = parse_css_length(val, 14.0) {
+                    style.border_radius_px = px;
                 }
             }
             _ => {}
@@ -542,6 +660,19 @@ fn display_is_block(v: Option<&String>, default_block: bool) -> bool {
     }
 }
 
+/// Some dictionaries use block tags like `<div>` as structural wrappers
+/// around inline content while relying on browser float/layout behavior
+/// that we do not fully emulate. Treating these wrappers as inline keeps
+/// sense-number rows together instead of breaking after every nested div.
+fn is_inline_wrapper(name: &str, classes: &[String]) -> bool {
+    if !name.eq_ignore_ascii_case("div") {
+        return false;
+    }
+    classes
+        .iter()
+        .any(|c| matches!(c.as_str(), "scnt" | "sense" | "sblock_labels"))
+}
+
 /// Image emission with one special case: if the image is wrapped in a
 /// `sound://` link (the standard MDX pronunciation-button idiom), we
 /// fold it into an inline run carrying the sound link instead of
@@ -554,6 +685,7 @@ fn emit_image(b: &mut Builder, attrs: &HashMap<String, String>) {
             text: SharedString::default(),
             style: b.current_style(),
             link: b.current_link(),
+            image: Some(SharedString::from(src.clone())),
         });
         return;
     }
@@ -677,7 +809,7 @@ fn handle_open(
     let default_block = matches!(
         name,
         "p" | "div" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "ul" | "ol" | "li" | "table" | "tr"
-    );
+    ) && !is_inline_wrapper(name, &classes);
     let block_display = display_is_block(decls.get("display"), default_block);
 
     // Pre-flush so block-level content starts on its own paragraph.
@@ -686,12 +818,15 @@ fn handle_open(
     }
 
     // Build the merged style for this element. Inheritable text styles
-    // are inherited from the parent; box-model fields (margins) are
-    // CSS layout properties that should NOT cascade.
+    // are inherited from the parent; box-model fields (margins) and
+    // element backgrounds should NOT cascade.
     let mut style = b.current_style();
     style.margin_top_px = 0.0;
     style.margin_bottom_px = 0.0;
     style.margin_left_px = 0.0;
+    if block_display {
+        style.bg_color = None;
+    }
     apply_tag_style(name, attrs, &mut style);
     apply_decls(&decls, &mut style);
     b.style_stack.push(style);
@@ -780,6 +915,24 @@ fn handle_close(b: &mut Builder, name: &str, pending_heading: &mut Option<u8>) {
 
     match name {
         "a" => {
+            // If this was a sound link that produced no inline content
+            // (e.g. <a href="sound://..." class="fa fa-volume-up"></a>),
+            // emit a sound inline now so the renderer shows a button.
+            if let Some(Link::Sound(path)) = b.link_stack.last().cloned() {
+                let closing_style = b.current_style();
+                let link_present = b.inline_buf.last().map_or(
+                    false,
+                    |r| matches!(&r.link, Some(Link::Sound(p)) if p == &path),
+                );
+                if !link_present {
+                    b.inline_buf.push(Inline {
+                        text: SharedString::default(),
+                        style: closing_style,
+                        link: Some(Link::Sound(path)),
+                        image: None,
+                    });
+                }
+            }
             b.link_stack.pop();
         }
         "ul" | "ol" => {
@@ -792,7 +945,9 @@ fn handle_close(b: &mut Builder, name: &str, pending_heading: &mut Option<u8>) {
 /// Pop the topmost open element as if it had been explicitly closed.
 /// Used to recover from out-of-order close tags.
 fn auto_close_top(b: &mut Builder) {
-    let Some(open) = b.element_stack.pop() else { return };
+    let Some(open) = b.element_stack.pop() else {
+        return;
+    };
     if open.hidden {
         if b.skip_depth > 0 {
             b.skip_depth -= 1;
@@ -818,6 +973,8 @@ fn apply_tag_style(name: &str, attrs: &HashMap<String, String>, s: &mut Style) {
         "b" | "strong" => s.bold = true,
         "i" | "em" => s.italic = true,
         "u" => s.underline = true,
+        "sup" => s.superscript = true,
+        "sub" => s.subscript = true,
         "font" => {
             if let Some(c) = attrs.get("color") {
                 s.color = Some(SharedString::from(c.clone()));

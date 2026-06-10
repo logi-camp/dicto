@@ -10,7 +10,7 @@ project. Start with [architecture.md](architecture.md) for the
 |------|--------------|
 | [architecture.md](architecture.md) | High-level overview, data flow, crate layout, threading model. |
 | [mdict-format.md](mdict-format.md) | MDX/MDD on-disk layout, the parser's interpretation, FST index build, the query pipeline (including `@@@LINK=` redirects). |
-| [rendering.md](rendering.md) | HTML → GPUI element pipeline: tokenizer, CSS subset, dark-theme color remap, image extraction, audio playback (rodio + ffmpeg/Speex), all the gotchas. |
+| [rendering.md](rendering.md) | HTML → GPUI element pipeline: tokenizer, CSS subset, grouped link chips, separate text/background dark-theme remap, image extraction, audio playback, and rendering gotchas. |
 | [settings.md](settings.md) | Per-dictionary configuration: enable/disable, reorder, hot reload, where settings live on disk. |
 
 ## External-library references (don't edit unless GPUI/gpui-component changes)

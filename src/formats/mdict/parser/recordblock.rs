@@ -21,8 +21,7 @@ pub fn parse_record_block_sizes(data: &[u8], version: u8) -> (&[u8], Vec<RecordB
         let mut sizes = Vec::with_capacity(records_num);
         for _ in 0..records_num {
             let csize = u64::from_be_bytes(data[pos..pos + 8].try_into().unwrap()) as usize;
-            let dsize =
-                u64::from_be_bytes(data[pos + 8..pos + 16].try_into().unwrap()) as usize;
+            let dsize = u64::from_be_bytes(data[pos + 8..pos + 16].try_into().unwrap()) as usize;
             sizes.push(RecordBlockSize { csize, dsize });
             pos += 16;
         }

@@ -1,23 +1,17 @@
 use std::path::Path;
 
 use gpui::{
-    div, px, AppContext as _, Entity, FontWeight, InteractiveElement, IntoElement, ParentElement,
-    SharedString, StatefulInteractiveElement, Styled,
+    AppContext as _, Entity, FontWeight, InteractiveElement, IntoElement, ParentElement,
+    SharedString, StatefulInteractiveElement, Styled, div, px,
 };
-use gpui_component::{
-    scroll::ScrollableElement,
-    h_flex, v_flex,
-};
+use gpui_component::{h_flex, scroll::ScrollableElement, v_flex};
 use mdict_rs::settings::DictEntry;
 use tracing::{info, warn};
 
 use crate::{colors, state::DictState};
 
 /// Build the dictionary list UI as a plain element (used by the settings overlay tab).
-pub fn panel_content(
-    state: Entity<DictState>,
-    cx: &mut gpui::App,
-) -> gpui::AnyElement {
+pub fn panel_content(state: Entity<DictState>, cx: &mut gpui::App) -> gpui::AnyElement {
     let snapshot = state.read(cx).dictionaries.clone();
 
     let header_text = div()
@@ -61,7 +55,6 @@ pub fn panel_content(
         .into_any_element()
 }
 
-
 fn row(idx: usize, entry: &DictEntry, total: usize, state: Entity<DictState>) -> gpui::AnyElement {
     let display = Path::new(&entry.path)
         .file_stem()
@@ -96,8 +89,16 @@ fn row(idx: usize, entry: &DictEntry, total: usize, state: Entity<DictState>) ->
                 .h(px(18.))
                 .rounded(px(4.))
                 .border_1()
-                .border_color(if enabled { colors::primary() } else { colors::border() })
-                .bg(if enabled { colors::primary() } else { colors::bg() })
+                .border_color(if enabled {
+                    colors::primary()
+                } else {
+                    colors::border()
+                })
+                .bg(if enabled {
+                    colors::primary()
+                } else {
+                    colors::bg()
+                })
                 .cursor_pointer()
                 .text_size(px(12.))
                 .text_color(colors::bg())
@@ -171,7 +172,11 @@ fn arrow_button(
         .border_1()
         .border_color(colors::border())
         .text_size(px(10.))
-        .text_color(if disabled { colors::text_secondary() } else { colors::text() })
+        .text_color(if disabled {
+            colors::text_secondary()
+        } else {
+            colors::text()
+        })
         .bg(colors::bg())
         .child(glyph);
 

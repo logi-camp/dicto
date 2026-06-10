@@ -114,7 +114,10 @@ fn word_item(
                 .into_iter()
                 .map(|hit| {
                     let blocks = crate::html::parse_styled(&hit.definition, &hit.name);
-                    crate::state::DictResult { name: hit.name, blocks }
+                    crate::state::DictResult {
+                        name: hit.name,
+                        blocks,
+                    }
                 })
                 .collect();
             cx.update_entity(&state, |s, cx| {

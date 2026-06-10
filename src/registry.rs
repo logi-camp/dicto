@@ -25,7 +25,9 @@ impl DictionaryRegistry {
                 Some(d)
             })
             .collect();
-        DictionaryRegistry { dictionaries: dicts }
+        DictionaryRegistry {
+            dictionaries: dicts,
+        }
     }
 
     /// Build (or rebuild) indexes for all configured MDX files, then reload.
@@ -41,7 +43,10 @@ impl DictionaryRegistry {
         self.dictionaries
             .iter()
             .filter_map(|d| {
-                d.lookup(word).map(|def| DictHit { name: d.name().to_string(), definition: def })
+                d.lookup(word).map(|def| DictHit {
+                    name: d.name().to_string(),
+                    definition: def,
+                })
             })
             .collect()
     }
@@ -85,8 +90,11 @@ impl DictionaryRegistry {
 
 // ── global registry ───────────────────────────────────────────────────────────
 
-static REGISTRY: LazyLock<RwLock<DictionaryRegistry>> =
-    LazyLock::new(|| RwLock::new(DictionaryRegistry { dictionaries: vec![] }));
+static REGISTRY: LazyLock<RwLock<DictionaryRegistry>> = LazyLock::new(|| {
+    RwLock::new(DictionaryRegistry {
+        dictionaries: vec![],
+    })
+});
 
 /// Initialize or reload the registry from current settings.
 /// Must be called after indexing completes.

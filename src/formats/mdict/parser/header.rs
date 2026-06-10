@@ -42,7 +42,14 @@ pub fn parse_header(data: &[u8]) -> (&[u8], Header) {
 
     let encoding = attrs.get("Encoding").cloned().unwrap_or_default();
 
-    (&data[8 + len..], Header { version, encrypted, encoding })
+    (
+        &data[8 + len..],
+        Header {
+            version,
+            encrypted,
+            encoding,
+        },
+    )
 }
 
 /// Scan `key="value"` pairs from the MDX XML-ish header string.

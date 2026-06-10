@@ -1,6 +1,6 @@
 use gpui::{
-    div, px, AppContext as _, Entity, FontWeight, InteractiveElement, IntoElement, ParentElement,
-    SharedString, Styled,
+    AppContext as _, Entity, FontWeight, InteractiveElement, IntoElement, ParentElement,
+    SharedString, Styled, div, px,
 };
 use gpui_component::{
     scroll::ScrollableElement,
@@ -99,9 +99,12 @@ fn tab_strip(results: &[DictResult], active: usize, state: Entity<DictState>) ->
     TabBar::new("detail-dict-tabs")
         .underline()
         .selected_index(active)
-        .children(results.iter().enumerate().map(|(_i, r)| {
-            Tab::new().label(SharedString::from(r.name.clone()))
-        }))
+        .children(
+            results
+                .iter()
+                .enumerate()
+                .map(|(_i, r)| Tab::new().label(SharedString::from(r.name.clone()))),
+        )
         .on_click(move |idx: &usize, _window, cx| {
             let i = *idx;
             cx.update_entity(&state_for_click, |s, cx| {
