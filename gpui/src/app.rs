@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use gpui::{
     div, px, AppContext as _, Context, Entity, FontWeight, InteractiveElement, IntoElement,
-    ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Window,
+    KeyDownEvent, ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Window,
 };
 use gpui_component::{
     h_flex,
@@ -70,6 +70,11 @@ impl DictApp {
         })
         .detach();
 
+        // Focus the search input on startup
+        cx.update_entity(&input, |input_state, cx| {
+            input_state.focus(window, cx);
+        });
+
         Self { state, input }
     }
 
@@ -120,6 +125,7 @@ impl Render for DictApp {
         // sibling of the main view ourselves.
         let dialog_layer = Root::render_dialog_layer(window, cx);
 
+        let input_handle = self.input.clone();
         let main = v_flex()
             .size_full()
             .bg(colors::bg())
@@ -161,6 +167,22 @@ impl Render for DictApp {
 
         div()
             .size_full()
+            .on_key_down(cx.listener(move |_this, event: &KeyDownEvent, window, cx| {
+                let m = &event.keystroke.modifiers;
+                let key = event.keystroke.key.as_str();
+
+                if m.control && (key == "l" || key == "f") {
+                    // Ctrl+L / Ctrl+F: focus search input
+                    cx.update_entity(&input_handle, |input, cx| {
+                        input.focus(window, cx);
+                    });
+                } else if key == "escape" {
+                    // Escape: clear the search field
+                    cx.update_entity(&input_handle, |input, cx| {
+                        input.set_value("", window, cx);
+                    });
+                }
+            }))
             .child(main)
             .children(dialog_layer)
             .child(settings_modal::overlay(self.state.clone(), window, cx))
