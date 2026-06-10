@@ -2,6 +2,13 @@
 
 GPUI provides async/await support via `cx.spawn()` and `cx.background_executor()`. Pattern differs from typical Tokio.
 
+> **CRITICAL NOTE:** The project uses the **git version** of gpui (from Zed's repo), not the crates.io version. In the git version, `AsyncApp::update_entity()` returns `R` **directly** (not `Result<R>`). This means:
+> - Do NOT chain `.ok()` on `update_entity` calls
+> - Do NOT use `match` on `Result` from `update_entity`
+> - The code examples below from the crates.io era still show `.ok()` — remove it when writing new code against the git version
+>
+> This also applies to `cx.update_entity()` called from within `cx.listener()` callbacks — same signature, returns `R` directly.
+
 ## Basic Background Task
 
 ```rust
@@ -335,7 +342,7 @@ fn start_polling(state: Entity<AppState>, cx: &mut App) {
 }
 ```
 
-This is the pattern used in LogiGuard GPUI app for polling daemon every 1 second.
+This is the pattern used in Dicto GPUI app for polling background tasks.
 
 ## Testing Async
 

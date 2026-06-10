@@ -47,24 +47,93 @@ impl DictApp {
 
             let dict_state = dict_state.clone();
             cx.spawn(async move |_this, cx| {
+                // Debounce: wait for the user to stop typing before fetching
+                // suggestions. 150ms is short enough to feel responsive but
+                // long enough to avoid hammering the FST on every keystroke.
                 cx.background_executor()
                     .timer(Duration::from_millis(150))
                     .await;
 
                 let q = text.clone();
+                let query_len = q.len();
                 let suggestions = cx
                     .background_executor()
                     .spawn(async move { mdict_rs::query::search_suggestions(&q, 50) })
                     .await;
 
+                // Auto-select the first suggestion for queries of 3+ chars.
+                // For shorter queries the list is shown but nothing is
+                // selected, avoiding jarring previews on single-letter input.
+                let auto_select = if query_len >= 3 && !suggestions.is_empty() {
+                    Some(0)
+                } else {
+                    None
+                };
+
                 cx.update_entity(&dict_state, |s, cx| {
                     let changed = s.suggestions != suggestions;
                     s.suggestions = suggestions;
                     if changed {
-                        s.selected_suggestion = None;
+                        s.selected_suggestion = auto_select;
                     }
                     cx.notify();
                 });
+
+                // Debounced definition preview: load the definition only
+                // after the user pauses typing for 200ms. This prevents
+                // rapid-fire definition parsing (which involves HTML
+                // parsing, CSS matching, and MDD resource lookups) on
+                // every intermediate keystroke.
+                if auto_select.is_some() {
+                    // Read the first suggestion to preview.
+                    let Some(word) = cx
+                        .update_entity(&dict_state, |s, _cx| {
+                            s.suggestions.first().cloned()
+                        })
+                    else {
+                        return;
+                    };
+
+                    cx.background_executor()
+                        .timer(Duration::from_millis(200))
+                        .await;
+
+                    // Re-read state after the quiet period — if the
+                    // user typed more, the suggestions will have
+                    // changed and we should skip this stale preview.
+                    let should_preview = cx
+                        .update_entity(&dict_state, |s, _cx| {
+                            s.selected_suggestion == Some(0)
+                                && s.result_word.as_deref() != Some(word.as_str())
+                        });
+
+                    if should_preview {
+                        let word_for_result = word.clone();
+                        let results = cx
+                            .background_executor()
+                            .spawn(async move {
+                                mdict_rs::query::query_all(&word)
+                                    .into_iter()
+                                    .map(|hit| {
+                                        let blocks =
+                                            crate::html::parse_styled(&hit.definition, &hit.name);
+                                        DictResult { name: hit.name, blocks }
+                                    })
+                                    .collect::<Vec<_>>()
+                            })
+                            .await;
+
+                        cx.update_entity(&dict_state, |s, cx| {
+                            if s.selected_suggestion == Some(0) {
+                                s.result_word = Some(word_for_result);
+                                s.is_searching = false;
+                                s.results = results;
+                                s.active_result = 0;
+                            }
+                            cx.notify();
+                        });
+                    }
+                }
             })
             .detach();
         })

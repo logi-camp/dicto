@@ -294,16 +294,19 @@ Use `SharedString` for dynamic values in elements (text, attributes). It's ref-c
 ```rust
 use gpui::{
     App, AppContext as _, Application, Context, Entity, FontWeight, 
-    IntoElement, ParentElement, Render, SharedString, Styled, Window, 
+    InteractiveElement, IntoElement, KeyDownEvent, ParentElement, Render, 
+    SharedString, StatefulInteractiveElement, Styled, Window, 
     WindowOptions, div, prelude::FluentBuilder as _, px, size,
 };
 ```
 
 - `AppContext as _` imports context trait (provides methods like `notify()`, `update_entity()`)
+- `InteractiveElement` adds `.on_click()`, `.on_key_down()` and other event handlers
+- `StatefulInteractiveElement` adds `.id()` (required before attaching event handlers)
 - `ParentElement` trait adds `.child()` method
 - `Styled` trait adds styling methods
 - `FluentBuilder as _` imports conditional rendering methods (`.when_some()`, `.when()`)
-- `prelude` module contains common re-exports
+- `KeyDownEvent` provides keyboard input via `.keystroke.key` and `.keystroke.modifiers`
 
 ## No-Go Methods (Not in Crates.io 0.2.2)
 
@@ -319,8 +322,8 @@ The `cx.spawn()` signature differs depending on context:
 
 **On `Context<T>` (inside `Render` or view methods):**
 ```rust
-// Takes 2 arguments: View<Self> and AsyncWindowContext
-cx.spawn(async move |_this: View<Self>, cx: AsyncWindowContext| {
+// Takes 2 arguments: WeakEntity<Self> and &mut AsyncApp
+cx.spawn(async move |_this: WeakEntity<Self>, cx: &mut AsyncApp| {
     // async work
 })
 .detach();
@@ -328,11 +331,53 @@ cx.spawn(async move |_this: View<Self>, cx: AsyncWindowContext| {
 
 **Inside `on_click` callbacks (from `InteractiveElement`):**
 ```rust
-// Takes 1 argument: AsyncWindowContext
+// Takes 1 argument: &mut AsyncApp
 .on_click(move |_, _, cx| {
-    cx.spawn(async move |cx: AsyncWindowContext| {
+    cx.spawn(async move |cx: &mut AsyncApp| {
         // async work
     })
     .detach();
 })
+```
+
+**Important:** The project uses the git version of gpui where `AsyncApp::update_entity()` returns `R` directly (not `Result<R>`). Do NOT chain `.ok()` on `update_entity` calls.
+
+## Keyboard Events
+
+### Global key handler on root element
+
+```rust
+use gpui::KeyDownEvent;
+
+div()
+    .size_full()
+    .on_key_down(cx.listener(move |_this, event: &KeyDownEvent, window, cx| {
+        let modifiers = &event.keystroke.modifiers;
+        let key = event.keystroke.key.as_str();
+
+        if modifiers.control && key == "l" {
+            // Ctrl+L action
+        } else if key == "escape" {
+            // Escape action
+        }
+    }))
+    .child(content)
+```
+
+Key points:
+- Attach `.on_key_down()` to the root `div()` to capture all keyboard events
+- Use `cx.listener()` to create the callback from within `Render::render()`
+- `event.keystroke.modifiers` has `.control`, `.alt`, `.shift`, `.platform` booleans
+- `event.keystroke.key` is a `SharedString`; use `.as_str()` for comparison
+- The listener receives `window: &mut Window` and `cx: &mut Context<Self>`
+
+### Keystroke modifier fields
+
+```rust
+struct Modifiers {
+    control: bool,
+    alt: bool,
+    shift: bool,
+    platform: bool,  // Command on macOS, Super on Linux
+}
 ```

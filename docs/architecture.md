@@ -19,10 +19,16 @@ to keep the library honest about its dependencies.
 ┌──────────────────────────────────────────────────────────────────┐
 │  GPUI app (mdict-gpui)                                           │
 │                                                                  │
-│   SearchBar.on_change ─► query::search_suggestions(prefix, 50)   │
+│   SearchBar.on_change ─► 150ms debounce                          │
+│                          ─► query::search_suggestions(prefix, 50) │
 │                          ─► returns Vec<String>, dedup'd         │
 │                                                                  │
-│   WordList click  ─► query::query_all(word)                      │
+│   Auto-select first suggestion (if query >= 3 chars):            │
+│                          ─► 200ms debounce                       │
+│                          ─► query::query_all(first_match)        │
+│                          ─► parse_styled + render preview        │
+│                                                                  │
+│   WordList click / Enter ─► query::query_all(word)               │
 │       ─► returns Vec<DictHit { name, definition: html }>         │
 │       ─► html::parse_styled(html, name)                          │
 │            (parser uses the per-dict Stylesheet)                 │
@@ -30,6 +36,10 @@ to keep the library honest about its dependencies.
 │                                                                  │
 │   DetailPanel render:                                            │
 │       ─► render_blocks(&state.results[active].blocks)            │
+│                                                                  │
+│   Keyboard shortcuts:                                            │
+│       Ctrl+L / Ctrl+F ─► focus search input                     │
+│       Escape           ─► clear search input                    │
 └──────────────────────────────────────────────────────────────────┘
                             ▲
                             │
@@ -107,7 +117,10 @@ gpui/
 │   ├── main.rs             window setup, tray, indexing kick-off,
 │   │                       per-dict CSS loader
 │   ├── app.rs              DictApp (Render), lookup_word(),
-│   │                       cog button, indexing_bar
+│   │                       cog button, indexing_bar,
+│   │                       global keyboard shortcuts (Ctrl+L/F, Esc),
+│   │                       auto-select first suggestion with debounced
+│   │                       definition preview (150ms suggestions + 200ms preview)
 │   ├── state.rs            DictState — see "State fields" below
 │   ├── audio.rs            rodio + ffmpeg fallback for Speex
 │   ├── colors.rs           theme color refs

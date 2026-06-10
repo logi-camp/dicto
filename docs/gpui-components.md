@@ -173,11 +173,10 @@ cx.open_window(
 
 ## Combining Layout and Components
 
-### Example: Decision Dialog (Legacy — Pre-MD3 Redesign)
+### Example: Decision Dialog
 
-> **Note:** The actual LogiGuard GPUI app now uses custom GPUI elements instead of
-> gpui-component `Button` and `Checkbox` to match the Material Design 3 design spec.
-> The segmented pill toggle, outlined action buttons, and grid layout are all built
+> **Note:** The actual Dicto GPUI app uses custom GPUI elements for
+> some components. The segmented pill toggle, outlined action buttons, and grid layout are all built
 > with raw `div()` + `h_flex()`/`v_flex()`. This example shows the general pattern.
 
 ```rust
@@ -653,7 +652,7 @@ window.open_dialog(cx, move |dialog, _, _cx| {
 
 ## Design System Components (`components/modal.rs`)
 
-Reusable UI primitives matching the LogiGuard design language. Import from `crate::components::*`.
+Reusable UI primitives matching the Dicto design language. Import from `crate::components::*`.
 
 ### `modal_header(icon, title)`
 
@@ -867,7 +866,7 @@ Many gpui-component types are in submodules and **not** re-exported at the crate
 
 ## Layout: h_flex / v_flex vs div
 
-`h_flex()` and `v_flex()` from `gpui_component` are pre-configured flex containers. They are the preferred layout primitives in all LogiGuard GPUI code.
+`h_flex()` and `v_flex()` from `gpui_component` are pre-configured flex containers. They are the preferred layout primitives in Dicto's GPUI code.
 
 ```rust
 // ✅ Prefer
@@ -886,7 +885,7 @@ div().flex().flex_row().gap(px(8.)).items_center().child(a).child(b)
 
 ## Project Design-System Layer (`components/ds.rs`)
 
-LogiGuard wraps the lowest-level GPUI/gpui-component primitives in `apps/gpui/src/components/ds.rs`. Always check `ds.rs` before writing inline UI atoms.
+Dicto wraps the lowest-level GPUI/gpui-component primitives in `gpui/src/components/`. Always check the components directory before writing inline UI atoms.
 
 ### Available Primitives
 
@@ -910,7 +909,7 @@ LogiGuard wraps the lowest-level GPUI/gpui-component primitives in `apps/gpui/sr
 
 ### label_row layout contract
 
-Every "label + interactive content" row in the decision dialog and settings panels must use `label_row`. This keeps the 72px left column aligned across all rows:
+Every "label + interactive content" row in the settings panels must use `label_row`. This keeps the 72px left column aligned across all rows:
 
 ```rust
 ds::label_row("Process",     chips.into_any_element())
