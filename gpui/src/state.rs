@@ -25,6 +25,9 @@ pub enum ImportStatus {
 }
 
 pub struct DictState {
+    /// Scroll handle for the word list panel, used to auto-scroll to the
+    /// selected item during keyboard navigation.
+    pub word_list_scroll: gpui::ScrollHandle,
     /// One entry per dictionary that had a hit for the current word, in
     /// settings order. Parsed blocks are cached so the detail panel
     /// never re-parses HTML on render.
@@ -59,6 +62,7 @@ pub struct DictState {
 impl DictState {
     pub fn new() -> Self {
         Self {
+            word_list_scroll: gpui::ScrollHandle::new(),
             results: Vec::new(),
             active_result: 0,
             result_word: None,

@@ -67,6 +67,7 @@ fn navigate_down(
 
     cx.update_entity(state, |s, cx| {
         s.selected_suggestion = Some(next);
+        s.word_list_scroll.scroll_to_item(next);
         cx.notify();
     });
     if let Some(w) = word {
@@ -91,6 +92,7 @@ fn navigate_up(
 
     cx.update_entity(state, |s, cx| {
         s.selected_suggestion = Some(prev);
+        s.word_list_scroll.scroll_to_item(prev);
         cx.notify();
     });
     if let Some(w) = word {

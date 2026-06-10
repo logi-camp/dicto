@@ -58,8 +58,11 @@ impl DictApp {
                     .await;
 
                 cx.update_entity(&dict_state, |s, cx| {
+                    let changed = s.suggestions != suggestions;
                     s.suggestions = suggestions;
-                    s.selected_suggestion = None;
+                    if changed {
+                        s.selected_suggestion = None;
+                    }
                     cx.notify();
                 });
             })

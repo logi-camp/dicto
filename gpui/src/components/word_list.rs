@@ -32,6 +32,7 @@ pub fn word_list(props: WordListProps, cx: &mut gpui::App) -> gpui::AnyElement {
 
     v_flex()
         .id("word-list")
+        .track_scroll(&state_handle.read(cx).word_list_scroll)
         .w(px(LIST_WIDTH))
         .min_w(px(LIST_WIDTH))
         .max_w(px(LIST_WIDTH))

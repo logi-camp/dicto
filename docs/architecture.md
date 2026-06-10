@@ -132,6 +132,7 @@ gpui/
 
 | Field | Type | Purpose |
 |-------|------|---------|
+| `word_list_scroll` | `gpui::ScrollHandle` | Scroll handle for the word list panel; used to auto-scroll to the selected item during keyboard navigation. |
 | `results` | `Vec<DictResult>` | Parsed hits for the current lookup word. |
 | `active_result` | `usize` | Index into `results` shown in DetailPanel. |
 | `result_word` | `Option<String>` | The word that produced `results`. |
