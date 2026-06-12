@@ -103,7 +103,7 @@ fn tab_strip(results: &[DictResult], active: usize, state: Entity<DictState>) ->
             results
                 .iter()
                 .enumerate()
-                .map(|(_i, r)| Tab::new().label(SharedString::from(r.name.clone()))),
+                .map(|(_i, r)| Tab::new().label(SharedString::from(r.short_name.clone()))),
         )
         .on_click(move |idx: &usize, _window, cx| {
             let i = *idx;

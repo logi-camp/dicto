@@ -55,25 +55,45 @@ works for text lookups but has no images / pronunciations.
 
 ## Settings UI (GPUI)
 
-The ⚙ Settings button opens a custom full-screen overlay modal
-(`settings_modal::overlay`) controlled by `DictState.show_settings_modal`.
-The modal is a fixed 560 × 600 px card rendered as a sibling of the
-main view — no `window.open_dialog()` is used, which lets the import
-callbacks close the modal via `cx.update_entity()` without needing a
-`Window` reference.
+The ⚙ Settings button opens a full-screen `Dialog` within the main
+window via `window.open_dialog()` (from `gpui_component::WindowExt`).
+The dialog is rendered inside the main window's `Root` component —
+no separate window is used.
+
+This approach avoids a Wayland/GNOME limitation: applications cannot
+programmatically raise/focus their own windows. By keeping settings
+as a dialog within the main window, it always appears on top and
+closes automatically when the main window closes.
+
+### Dialog structure
+
+The settings dialog contains:
+
+1. **Title** — "Settings" with a close button (✕).
+2. **Tab bar** — `TabBar` with "Dictionaries" and "Import" tabs,
+   controlled by `DictState.settings_active_tab`.
+3. **Content** — renders either the Dictionaries tab or Import tab.
+4. **Footer** — Cancel and Save buttons.
+
+The dialog is opened in `app.rs::cog_button()` and calls
+`settings_panel::apply_save()` on Save.
 
 ### Dictionaries tab
 
 [gpui/src/components/settings_panel.rs](../gpui/src/components/settings_panel.rs)
 
-A scrollable list of dictionary rows (`overflow_y_scrollbar`, `h(320)`):
+Uses plain flex rows (`h_flex`) instead of the `Table` component for
+precise column alignment:
 
-- Checkbox-style toggle (the colored box; click to enable/disable).
-- Dictionary stem name + full path.
-- `▲` / `▼` reorder buttons (disabled at list boundaries).
+| Column | Width | Content |
+|--------|-------|---------|
+| Checkbox | 28px fixed | Toggle enable/disable |
+| Dictionary name | flex-1 (fills remaining) | Display name |
+| Arrows | 44px fixed | ▲ ▼ reorder buttons |
+| Detail | 28px fixed | ≡ detail button |
 
 Edits mutate `DictState.dictionaries` (a working copy). Save/Cancel
-buttons appear inline below the list.
+buttons appear in the dialog footer.
 
 The **Save** button calls `settings_panel::apply_save(state, cx)`:
 
@@ -83,10 +103,8 @@ The **Save** button calls `settings_panel::apply_save(state, cx)`:
    paths via `formats::detect(...).build_index(false)` + `registry::reload()`.
 4. Re-sync `state.dictionaries` from disk.
 
-**Cancel** calls `settings_panel::revert(state, cx)` (reloads working
-copy from disk) then closes.
-
-Both buttons also clear `state.import_files` on close.
+**Cancel** simply closes the dialog. No revert needed because the
+working copy is in-memory only — it's discarded on close.
 
 ### Import tab
 
@@ -117,7 +135,40 @@ and Settings → Import tab):
    The modal stays open so the user can review results; it closes
    only when the user clicks Done/✕, which also clears `state.import_files`.
 
-### Why a working copy
+### Dictionary detail dialog
+
+Each dictionary row has a ≡ detail button that opens a nested `Dialog`
+(via `window.open_dialog()`). This dialog shows read-only metadata
+plus an editable display name:
+
+| Field | Source | Editable |
+|-------|--------|----------|
+| Display name | `entry.short_name` (auto-derived from MDX title) | Yes — Input + inline Apply button |
+| Description | `mdx_header_description()` (cleaned: HTML stripped, CSS discarded) | No |
+| Path | `entry.path` | No |
+| Encoding | `mdx_header_encoding()` | No |
+| Version | `mdx_header_version()` | No |
+
+The Apply button saves the new `short_name` to `DictState.dictionaries`
+and closes the dialog. The dialog's close button (✕) dismisses without
+saving. No footer buttons — Apply is inline next to the Input field.
+
+### MDX header helpers
+
+The following functions in `mdict_rs::formats::mdict` extract metadata
+from the MDX file header:
+
+- `mdx_header_title(path)` — full dictionary title from `<Title>` header
+- `mdx_header_description(path)` — raw description (may contain HTML/CSS)
+- `mdx_header_encoding(path)` — text encoding (e.g. "UTF-8")
+- `mdx_header_version(path)` — format version string (e.g. "2.0")
+
+Description cleaning (`clean_description`) strips:
+1. `<style ...>...</style>` blocks (with any attributes like `type="text/css"`)
+2. All remaining HTML tags
+3. HTML entities (`&amp;`, `&#NNN;`, etc.)
+4. CSS-like content (if result still contains `{`, `}`, `:`)
+5. Whitespace collapse; truncated to 300 chars
 
 The settings card re-renders on every toggle/reorder because GPUI
 rebuilds the element tree from state each frame. Writing directly to

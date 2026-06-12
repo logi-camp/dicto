@@ -533,6 +533,48 @@ dialog
     .on_ok(|_, _, _| true)
 ```
 
+### Using `.content()` for Dynamic Content
+
+The `.content()` method takes a closure that receives `DialogContent, &mut Window, &mut App` and returns `DialogContent`. This is useful when you need to read entity state at render time:
+
+```rust
+window.open_dialog(cx, move |dialog, _window, _cx| {
+    let state = state.clone();
+    dialog
+        .title("Settings")
+        .w_full()
+        .close_button(true)
+        .content(move |content, _window, cx| {
+            let active_tab = state.read(cx).settings_active_tab;
+            content.child(
+                v_flex().w_full()
+                    .child(if active_tab == 0 {
+                        /* tab 0 content */
+                        div().into_any_element()
+                    } else {
+                        /* tab 1 content */
+                        div().into_any_element()
+                    })
+            )
+        })
+        .footer(
+            h_flex().justify_end().gap(px(8.))
+                .child(/* Cancel button */)
+                .child(/* Save button */)
+        )
+});
+```
+
+**Key points:**
+- `.content()` closure is `Fn` (called each render), so clone entities before the closure.
+- `DialogContent` has `.child()` just like `div()`.
+- `.footer()` takes an `impl IntoElement` (not a closure like the older pattern).
+- `window.close_dialog(cx)` closes the dialog from any click handler.
+
+### Nested Dialogs
+
+Dialogs can be opened from within another dialog (e.g., a detail dialog from a settings dialog). Each `open_dialog` call pushes onto `Root::active_dialogs`. `close_dialog` closes the topmost one. All dialogs render via `Root::render_dialog_layer()`.
+
 ### Custom Full-Bleed Dialog Header
 
 `Dialog` implements the `Styled` trait, so calling `.p(px(0.))` zeroes all internal padding. Combined with `.close_button(false)` and a custom `.title()`, this gives a full-width header bar:

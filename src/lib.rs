@@ -9,8 +9,8 @@ pub mod util;
 
 #[cfg(test)]
 mod tests {
-    use crate::formats::mdict::MdxDictionary;
     use crate::dictionary::Dictionary;
+    use crate::formats::mdict::MdxDictionary;
 
     #[test]
     fn dump_wordnet_same() {

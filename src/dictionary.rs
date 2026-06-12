@@ -1,10 +1,31 @@
 /// A single dictionary's hit for a word lookup.
 #[derive(Debug, Clone)]
 pub struct DictHit {
-    /// Human-readable dictionary name (file stem).
+    /// Human-readable dictionary name (from MDX header Title, or file stem).
     pub name: String,
+    /// Short name for tab titles (abbreviation or full title if short enough).
+    pub short_name: String,
+    /// File stem for stylesheet lookup and internal routing.
+    pub stem: String,
     /// HTML or plain-text definition.
     pub definition: String,
+}
+
+/// Metadata about a dictionary, read from its header.
+#[derive(Debug, Clone)]
+pub struct DictInfo {
+    /// Display title (e.g. "Merriam-Webster's Advanced Learner's English Dictionary").
+    pub title: String,
+    /// Description from the header (may contain HTML entities).
+    pub description: String,
+    /// File stem used for index paths and stylesheet lookup.
+    pub stem: String,
+    /// Full path to the MDX file.
+    pub path: String,
+    /// Text encoding declared in the header (e.g. "UTF-8").
+    pub encoding: String,
+    /// MDX engine version (1 or 2).
+    pub version: u8,
 }
 
 /// Core interface every dictionary format must implement.
@@ -14,8 +35,17 @@ pub struct DictHit {
 /// simply returns `Ok(None)` from `resource` and an empty vec from
 /// `css_resources`.
 pub trait Dictionary: Send + Sync {
-    /// Human-readable name shown in the UI (typically the file stem).
+    /// Human-readable name shown in the UI (MDX header Title, or file stem).
     fn name(&self) -> &str;
+
+    /// Short name for tab titles (abbreviation if title is long).
+    fn short_name(&self) -> &str;
+
+    /// File stem for index paths and stylesheet lookup.
+    fn stem(&self) -> &str;
+
+    /// Metadata read from the dictionary header.
+    fn info(&self) -> DictInfo;
 
     /// Look up a word. Returns the HTML/text definition or `None` if not
     /// found. Redirect resolution (e.g. `@@@LINK=`) is handled internally.

@@ -117,10 +117,10 @@ gpui/
 │   ├── main.rs             window setup, tray, indexing kick-off,
 │   │                       per-dict CSS loader
 │   ├── app.rs              DictApp (Render), lookup_word(),
-│   │                       cog button, indexing_bar,
-│   │                       global keyboard shortcuts (Ctrl+L/F, Esc),
-│   │                       auto-select first suggestion with debounced
-│   │                       definition preview (150ms suggestions + 200ms preview)
+│   │                       cog button (opens settings dialog),
+│   │                       indexing_bar, global keyboard shortcuts
+│   │                       (Ctrl+L/F, Esc), auto-select first
+│   │                       suggestion with debounced preview
 │   ├── state.rs            DictState — see "State fields" below
 │   ├── audio.rs            rodio + ffmpeg fallback for Speex
 │   ├── colors.rs           theme color refs
@@ -128,10 +128,13 @@ gpui/
 │   │   ├── detail_panel.rs heading + TabBar + scroll body
 │   │   ├── word_list.rs    left pane
 │   │   ├── search_bar.rs   input + right_slot for the cog
-│   │   ├── settings_modal.rs full-screen overlay modal (2 tabs)
-│   │   ├── settings_panel.rs dict list UI + apply_save / revert
+│   │   ├── settings_panel.rs dict list UI + apply_save;
+│   │                       detail dialog (per-dict metadata);
+│   │                       uses flex rows for column alignment
+│   │   ├── settings_window.rs header_tabs_for_dialog (shared
+│   │                       TabBar for settings dialog)
 │   │   └── init_modal.rs   first-run import overlay; also provides
-│   │                       import_tab_content shared by settings tab
+│   │                       import_tab_content shared by settings
 │   └── html/
 │       ├── mod.rs          STYLESHEETS map, parse_styled
 │       ├── css.rs          CSS subset parser + matcher
@@ -154,8 +157,7 @@ gpui/
 | `selected_suggestion` | `Option<usize>` | Keyboard-selected row in WordList. |
 | `dictionaries` | `Vec<DictEntry>` | Working copy for the settings Dictionaries tab. |
 | `indexing_total` / `indexing_done` / `indexing_current` | `usize` / `usize` / `Option<String>` | Background indexing progress shown in `indexing_bar`. |
-| `show_settings_modal` | `bool` | True when the ⚙ Settings overlay is visible. |
-| `settings_active_tab` | `usize` | 0 = Dictionaries tab, 1 = Import tab. |
+| `settings_active_tab` | `usize` | 0 = Dictionaries tab, 1 = Import tab (in settings dialog). |
 | `show_init_modal` | `bool` | True when `~/.config/dicto/dicts/` contains no `.mdx` files at startup. |
 | `import_files` | `Vec<ImportFile>` | Files queued/in-progress/completed in the current import session. Cleared when either modal is dismissed. |
 

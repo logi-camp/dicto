@@ -4,13 +4,12 @@ use gpui::{
     AppContext as _, Context, Entity, FontWeight, InteractiveElement, IntoElement, KeyDownEvent,
     ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Window, div, px,
 };
-use gpui_component::{Root, TitleBar, h_flex, input::InputState, v_flex};
+use gpui_component::{Root, TitleBar, WindowExt, h_flex, input::InputState, v_flex};
 
 use crate::colors;
 use crate::components::{
     detail_panel, init_modal,
     search_bar::{self, SearchBarProps},
-    settings_modal,
     word_list::{self, WordListProps},
 };
 use crate::state::{DictResult, DictState};
@@ -108,9 +107,9 @@ impl DictApp {
                                     .into_iter()
                                     .map(|hit| {
                                         let blocks =
-                                            crate::html::parse_styled(&hit.definition, &hit.name);
+                                            crate::html::parse_styled(&hit.definition, &hit.stem);
                                         DictResult {
-                                            name: hit.name,
+                                            short_name: hit.short_name,
                                             blocks,
                                         }
                                     })
@@ -164,9 +163,9 @@ impl DictApp {
                     mdict_rs::query::query_all(&q)
                         .into_iter()
                         .map(|hit| {
-                            let blocks = crate::html::parse_styled(&hit.definition, &hit.name);
+                            let blocks = crate::html::parse_styled(&hit.definition, &hit.stem);
                             DictResult {
-                                name: hit.name,
+                                short_name: hit.short_name,
                                 blocks,
                             }
                         })
@@ -254,7 +253,6 @@ impl Render for DictApp {
             }))
             .child(main)
             .children(dialog_layer)
-            .child(settings_modal::overlay(self.state.clone(), window, cx))
             .child(init_modal::overlay(self.state.clone(), window, cx))
             .into_any_element()
     }
@@ -326,12 +324,97 @@ fn cog_button(state: Entity<DictState>) -> gpui::AnyElement {
         .border_color(colors::border())
         .cursor_pointer()
         .hover(|s| s.bg(colors::surface()))
-        .child(SharedString::from("⚙ Settings"))
-        .on_click(move |_, _, cx| {
-            cx.update_entity(&state, |s, cx| {
-                s.show_settings_modal = true;
-                s.settings_active_tab = 0;
-                cx.notify();
+        .child(SharedString::from("\u{2699} Settings"))
+        .on_click(move |_, window, cx| {
+            let state = state.clone();
+
+            window.open_dialog(cx, move |dialog, _window, _cx| {
+                let state = state.clone();
+                let footer_state = state.clone();
+
+                dialog
+                    .title(div().child("Settings"))
+                    .w_full()
+                    .max_h(px(600.))
+                    .close_button(true)
+                    .overlay_closable(true)
+                    .content(move |content, _window, cx| {
+                        let active_tab = state.read(cx).settings_active_tab;
+
+                        content.child(
+                            v_flex()
+                                .w_full()
+                                .gap(px(12.))
+                                .child(crate::components::settings_window::header_tabs_for_dialog(
+                                    state.clone(),
+                                    active_tab,
+                                    cx,
+                                ))
+                                .child(if active_tab == 0 {
+                                    crate::components::settings_panel::panel_content(
+                                        state.clone(),
+                                        cx,
+                                    )
+                                } else {
+                                    let is_importing =
+                                        state.read(cx).import_files.iter().any(|f| {
+                                            matches!(
+                                                f.status,
+                                                crate::state::ImportStatus::Copying
+                                                    | crate::state::ImportStatus::Indexing
+                                            )
+                                        });
+                                    crate::components::init_modal::import_tab_content(
+                                        state.clone(),
+                                        is_importing,
+                                        cx,
+                                    )
+                                }),
+                        )
+                    })
+                    .footer(
+                        h_flex()
+                            .justify_end()
+                            .gap(px(8.))
+                            .child(
+                                div()
+                                    .id("settings-cancel-btn")
+                                    .px(px(14.))
+                                    .py(px(7.))
+                                    .rounded(px(6.))
+                                    .text_size(px(13.))
+                                    .text_color(colors::text_secondary())
+                                    .border_1()
+                                    .border_color(colors::border())
+                                    .cursor_pointer()
+                                    .hover(|s| s.bg(colors::bg()))
+                                    .child("Cancel")
+                                    .on_click(|_, window, cx| {
+                                        window.close_dialog(cx);
+                                    }),
+                            )
+                            .child({
+                                div()
+                                    .id("settings-save-btn")
+                                    .px(px(14.))
+                                    .py(px(7.))
+                                    .rounded(px(6.))
+                                    .text_size(px(13.))
+                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .text_color(colors::bg())
+                                    .bg(colors::primary())
+                                    .cursor_pointer()
+                                    .hover(|s| s.opacity(0.85))
+                                    .child("Save")
+                                    .on_click(move |_, window, cx| {
+                                        crate::components::settings_panel::apply_save(
+                                            &footer_state,
+                                            cx,
+                                        );
+                                        window.close_dialog(cx);
+                                    })
+                            }),
+                    )
             });
         })
         .into_any_element()

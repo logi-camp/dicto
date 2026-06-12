@@ -459,15 +459,12 @@ fn sound_button(
             .and_then(|c| parse_text_color(c))
             .unwrap_or(colors::primary());
         let size_px = style.font_size_px.unwrap_or(16.0);
-        btn = btn
-            .px(px(2.))
-            .hover(|s| s.bg(colors::border()))
-            .child(
-                svg()
-                    .path("icons/play.svg")
-                    .text_color(color)
-                    .size(px(size_px)),
-            );
+        btn = btn.px(px(2.)).hover(|s| s.bg(colors::border())).child(
+            svg()
+                .path("icons/play.svg")
+                .text_color(color)
+                .size(px(size_px)),
+        );
     } else {
         let display: SharedString = if label.trim().is_empty() {
             SharedString::from("▶")

@@ -145,7 +145,7 @@ fn close_button(
 pub fn import_tab_content(
     state: Entity<DictState>,
     is_importing: bool,
-    cx: &mut Context<DictApp>,
+    cx: &mut gpui::App,
 ) -> gpui::AnyElement {
     let files = &state.read(cx).import_files;
     let has_files = !files.is_empty();
@@ -304,7 +304,7 @@ fn drop_zone(state: Entity<DictState>, is_importing: bool) -> gpui::AnyElement {
     .into_any_element()
 }
 
-fn file_list(state: Entity<DictState>, cx: &Context<DictApp>) -> gpui::AnyElement {
+fn file_list(state: Entity<DictState>, cx: &gpui::App) -> gpui::AnyElement {
     let files = &state.read(cx).import_files;
 
     let mut list = v_flex()
@@ -521,6 +521,7 @@ pub fn start_import(paths: Vec<PathBuf>, state: Entity<DictState>, cx: &mut gpui
                     settings.dictionaries.push(DictEntry {
                         path: dest_str.clone(),
                         enabled: true,
+                        short_name: String::new(),
                     });
                     if let Err(e) = mdict_rs::settings::update(settings) {
                         warn!("init_modal: failed to update settings for {dest_str}: {e}");

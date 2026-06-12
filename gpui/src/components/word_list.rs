@@ -113,9 +113,9 @@ fn word_item(
             let results: Vec<crate::state::DictResult> = mdict_rs::query::query_all(&w)
                 .into_iter()
                 .map(|hit| {
-                    let blocks = crate::html::parse_styled(&hit.definition, &hit.name);
+                    let blocks = crate::html::parse_styled(&hit.definition, &hit.stem);
                     crate::state::DictResult {
-                        name: hit.name,
+                        short_name: hit.short_name,
                         blocks,
                     }
                 })

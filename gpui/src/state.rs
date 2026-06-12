@@ -6,7 +6,8 @@ use crate::html::Block;
 
 #[derive(Debug, Clone)]
 pub struct DictResult {
-    pub name: String,
+    /// Short name for tab labels.
+    pub short_name: String,
     pub blocks: Vec<Block>,
 }
 
@@ -53,9 +54,7 @@ pub struct DictState {
     /// Files being imported via the init/settings modal.
     pub import_files: Vec<ImportFile>,
 
-    /// True when the ⚙ Settings overlay is open.
-    pub show_settings_modal: bool,
-    /// Active tab in the settings overlay: 0 = Dictionaries, 1 = Import.
+    /// Active tab in the settings dialog: 0 = Dictionaries, 1 = Import.
     pub settings_active_tab: usize,
 }
 
@@ -75,7 +74,6 @@ impl DictState {
             indexing_current: None,
             show_init_modal: mdict_rs::config::discover_mdx_files().is_empty(),
             import_files: Vec::new(),
-            show_settings_modal: false,
             settings_active_tab: 0,
         }
     }

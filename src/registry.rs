@@ -45,6 +45,8 @@ impl DictionaryRegistry {
             .filter_map(|d| {
                 d.lookup(word).map(|def| DictHit {
                     name: d.name().to_string(),
+                    short_name: d.short_name().to_string(),
+                    stem: d.stem().to_string(),
                     definition: def,
                 })
             })

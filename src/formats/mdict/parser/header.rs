@@ -10,6 +10,10 @@ pub struct Header {
     pub encrypted: u8,
     /// Text encoding for MDX key strings, e.g. "UTF-8". Empty → treat as UTF-8.
     pub encoding: String,
+    /// Human-readable dictionary title from the `Title` attribute.
+    pub title: String,
+    /// Dictionary description (may contain HTML).
+    pub description: String,
 }
 
 /// Parse the MDX/MDD file header.
@@ -41,6 +45,8 @@ pub fn parse_header(data: &[u8]) -> (&[u8], Header) {
         .unwrap_or(0);
 
     let encoding = attrs.get("Encoding").cloned().unwrap_or_default();
+    let title = attrs.get("Title").cloned().unwrap_or_default();
+    let description = attrs.get("Description").cloned().unwrap_or_default();
 
     (
         &data[8 + len..],
@@ -48,6 +54,8 @@ pub fn parse_header(data: &[u8]) -> (&[u8], Header) {
             version,
             encrypted,
             encoding,
+            title,
+            description,
         },
     )
 }

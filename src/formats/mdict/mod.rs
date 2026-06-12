@@ -137,10 +137,208 @@ pub fn mdx_header_stylesheet(mdx_path: &str) -> String {
     }
 }
 
-// ── MdxDictionary ─────────────────────────────────────────────────────────────
+/// Read the MDX header and return the `Title` attribute.
+/// Returns the file stem if the file cannot be read or has no Title.
+pub fn mdx_header_title(mdx_path: &str) -> String {
+    let stem = PathBuf::from(mdx_path)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or(mdx_path)
+        .to_string();
+
+    let Ok(data) = std::fs::read(mdx_path) else {
+        return stem;
+    };
+    let len = match data.get(0..4) {
+        Some(b) => u32::from_be_bytes(b.try_into().unwrap()) as usize,
+        None => return stem,
+    };
+    let buf = match data.get(4..4 + len) {
+        Some(b) => b,
+        None => return stem,
+    };
+    use encoding::{DecoderTrap, Encoding, all::UTF_16LE};
+    let xml = match UTF_16LE.decode(buf, DecoderTrap::Strict) {
+        Ok(s) => s,
+        Err(_) => return stem,
+    };
+    let attrs = parse_attrs(&xml);
+    attrs
+        .get("Title")
+        .filter(|t| !t.trim().is_empty())
+        .cloned()
+        .unwrap_or(stem)
+}
+
+/// Lightweight header metadata (no full Dictionary instance needed).
+pub struct HeaderMeta {
+    pub encoding: String,
+    pub version: u8,
+    pub description: String,
+}
+
+/// Read encoding, version, description from the MDX header.
+pub fn mdx_header_info(mdx_path: &str) -> HeaderMeta {
+    let default = HeaderMeta {
+        encoding: String::new(),
+        version: 0,
+        description: String::new(),
+    };
+    let Ok(data) = std::fs::read(mdx_path) else {
+        return default;
+    };
+    let len = match data.get(0..4) {
+        Some(b) => u32::from_be_bytes(b.try_into().unwrap()) as usize,
+        None => return default,
+    };
+    let buf = match data.get(4..4 + len) {
+        Some(b) => b,
+        None => return default,
+    };
+    use encoding::{DecoderTrap, Encoding, all::UTF_16LE};
+    let xml = match UTF_16LE.decode(buf, DecoderTrap::Strict) {
+        Ok(s) => s,
+        Err(_) => return default,
+    };
+    let attrs = parse_attrs(&xml);
+    let description = attrs.get("Description").cloned().unwrap_or_default();
+    HeaderMeta {
+        encoding: attrs.get("Encoding").cloned().unwrap_or_default(),
+        version: attrs
+            .get("GeneratedByEngineVersion")
+            .and_then(|v| v.trim().chars().next())
+            .and_then(|c| c.to_digit(10))
+            .unwrap_or(0) as u8,
+        description: clean_description(&description),
+    }
+}
+
+fn strip_html(html: &str) -> String {
+    let mut out = String::with_capacity(html.len());
+    let mut in_tag = false;
+    for c in html.chars() {
+        match c {
+            '<' => in_tag = true,
+            '>' => in_tag = false,
+            _ if !in_tag => out.push(c),
+            _ => {}
+        }
+    }
+    out
+}
+
+/// Strip HTML tags, <style> blocks, and decode common HTML entities.
+/// Truncate to 300 chars.
+fn clean_description(raw: &str) -> String {
+    // Remove <style...>...</style> blocks first (handles attributes like <style type="text/css">).
+    let mut out = String::with_capacity(raw.len());
+    let mut skip = false;
+    let chars = raw.chars().collect::<Vec<_>>();
+    let lower: String = raw.to_lowercase();
+    let lower_bytes = lower.as_bytes();
+    let mut i = 0;
+    while i < chars.len() {
+        // Check for <style opening tag (may have attributes)
+        if lower_bytes.get(i).copied() == Some(b'<')
+            && lower_bytes
+                .get(i + 1..i + 6)
+                .map(|s| s == b"style")
+                .unwrap_or(false)
+            && lower_bytes
+                .get(i + 6)
+                .copied()
+                .map(|c| c == b'>' || c == b' ')
+                .unwrap_or(false)
+        {
+            skip = true;
+            // Skip to the end of the opening tag
+            while i < chars.len() && chars[i] != '>' {
+                i += 1;
+            }
+            i += 1; // skip the '>'
+            continue;
+        }
+        // Check for </style>
+        if lower_bytes
+            .get(i..i + 8)
+            .map(|s| s == b"</style>")
+            .unwrap_or(false)
+        {
+            skip = false;
+            i += 8;
+            continue;
+        }
+        if !skip {
+            out.push(chars[i]);
+        }
+        i += 1;
+    }
+
+    // Strip remaining HTML tags.
+    let out = strip_html(&out);
+
+    // Decode common HTML entities.
+    let out = out
+        .replace("&apos;", "'")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&amp;", "&")
+        .replace("&#39;", "'");
+
+    // Collapse whitespace.
+    let out: String = out
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .trim()
+        .to_string();
+
+    // If the result still looks like CSS/JS code, discard it entirely.
+    if out.contains('{') && out.contains('}') && out.contains(':') {
+        return String::new();
+    }
+
+    // Truncate.
+    if out.len() > 300 {
+        format!("{}…", &out[..300])
+    } else {
+        out
+    }
+}
+
+/// Abbreviate a long dictionary title by taking the first letter of each
+/// significant word (uppercase or title-case). Examples:
+/// - "Merriam-Webster's Advanced Learner's English Dictionary" → "MWALED"
+/// - "The American Heritage® Dictionary of the English Language, Fifth Edition © 2017" → "TAHDOTELFE"
+/// - "Longman Dictionary of Contemporary English" → "LDOCE"
+fn abbreviate_title(title: &str) -> String {
+    let skip_words = ["the", "of", "a", "an", "and", "or", "for", "in", "on", "to"];
+    let mut abbr = String::new();
+    for word in title.split_whitespace() {
+        // Strip punctuation/copyright symbols from the word boundary.
+        let clean: String = word
+            .chars()
+            .filter(|c| c.is_alphabetic() || *c == '-' || *c == '\'')
+            .collect();
+        if clean.is_empty() || skip_words.contains(&clean.to_lowercase().as_str()) {
+            continue;
+        }
+        // Take the first character of each significant word (uppercase it).
+        if let Some(c) = clean.chars().next() {
+            abbr.push(c.to_ascii_uppercase());
+        }
+    }
+    if abbr.len() > 10 {
+        abbr.truncate(10);
+    }
+    abbr
+}
 
 pub struct MdxDictionary {
-    name: String,
+    stem: String,
+    display_name: String,
+    short_name: String,
     mdx_path: String,
     mdd_path: Option<String>,
     fst: RwLock<Option<Arc<FstIndex>>>,
@@ -151,11 +349,34 @@ pub struct MdxDictionary {
 
 impl MdxDictionary {
     pub fn new(mdx_path: &str) -> Self {
-        let name = PathBuf::from(mdx_path)
+        let stem = PathBuf::from(mdx_path)
             .file_stem()
             .and_then(|s| s.to_str())
             .unwrap_or(mdx_path)
             .to_string();
+
+        // Read header to get the display title.
+        let display_name = std::fs::read(mdx_path)
+            .ok()
+            .and_then(|data| {
+                let len = u32::from_be_bytes(data.get(0..4)?.try_into().ok()?) as usize;
+                let buf = data.get(4..4 + len)?;
+                use encoding::{DecoderTrap, Encoding, all::UTF_16LE};
+                let xml = UTF_16LE.decode(buf, DecoderTrap::Strict).ok()?;
+                let attrs = parser::header::parse_attrs(&xml);
+                attrs.get("Title").cloned()
+            })
+            .filter(|t| !t.trim().is_empty())
+            .unwrap_or_else(|| stem.clone());
+
+        let auto_short = if display_name.len() <= 25 {
+            display_name.clone()
+        } else {
+            abbreviate_title(&display_name)
+        };
+
+        // Use user override from settings if set, otherwise auto-generated.
+        let short_name = crate::settings::short_name_override(mdx_path).unwrap_or(auto_short);
 
         let mdd_path = {
             let p = PathBuf::from(mdx_path).with_extension("mdd");
@@ -167,7 +388,9 @@ impl MdxDictionary {
         };
 
         MdxDictionary {
-            name,
+            stem,
+            display_name,
+            short_name,
             mdx_path: mdx_path.to_string(),
             mdd_path,
             fst: RwLock::new(None),
@@ -191,7 +414,7 @@ impl MdxDictionary {
                 Some(idx)
             }
             None => {
-                warn!("{}: cannot open FST index {fst_path}", self.name);
+                warn!("{}: cannot open FST index {fst_path}", self.display_name);
                 None
             }
         }
@@ -212,7 +435,10 @@ impl MdxDictionary {
                 Some(idx)
             }
             None => {
-                warn!("{}: cannot open MDD FST index {fst_path}", self.name);
+                warn!(
+                    "{}: cannot open MDD FST index {fst_path}",
+                    self.display_name
+                );
                 None
             }
         }
@@ -231,7 +457,7 @@ impl MdxDictionary {
                 Some(arc)
             }
             Err(e) => {
-                warn!("{}: cannot open {}: {e}", self.name, self.mdx_path);
+                warn!("{}: cannot open {}: {e}", self.display_name, self.mdx_path);
                 None
             }
         }
@@ -251,7 +477,7 @@ impl MdxDictionary {
                 Some(arc)
             }
             Err(e) => {
-                warn!("{}: cannot open {mdd_path}: {e}", self.name);
+                warn!("{}: cannot open {mdd_path}: {e}", self.display_name);
                 None
             }
         }
@@ -279,7 +505,47 @@ impl MdxDictionary {
 
 impl Dictionary for MdxDictionary {
     fn name(&self) -> &str {
-        &self.name
+        &self.display_name
+    }
+
+    fn short_name(&self) -> &str {
+        &self.short_name
+    }
+
+    fn stem(&self) -> &str {
+        &self.stem
+    }
+
+    fn info(&self) -> crate::dictionary::DictInfo {
+        use crate::dictionary::DictInfo;
+        let (version, encoding, title, description) = std::fs::read(&self.mdx_path)
+            .ok()
+            .and_then(|data| {
+                let len = u32::from_be_bytes(data.get(0..4)?.try_into().ok()?) as usize;
+                let buf = data.get(4..4 + len)?;
+                use encoding::{DecoderTrap, Encoding, all::UTF_16LE};
+                let xml = UTF_16LE.decode(buf, DecoderTrap::Strict).ok()?;
+                let attrs = parser::header::parse_attrs(&xml);
+                let version = attrs
+                    .get("GeneratedByEngineVersion")
+                    .and_then(|v| v.trim().chars().next())
+                    .and_then(|c| c.to_digit(10))
+                    .unwrap_or(2) as u8;
+                let encoding = attrs.get("Encoding").cloned().unwrap_or_default();
+                let title = attrs.get("Title").cloned().unwrap_or_default();
+                let description = attrs.get("Description").cloned().unwrap_or_default();
+                Some((version, encoding, title, description))
+            })
+            .unwrap_or((2, String::new(), self.display_name.clone(), String::new()));
+
+        DictInfo {
+            title,
+            description,
+            stem: self.stem.clone(),
+            path: self.mdx_path.clone(),
+            encoding,
+            version,
+        }
     }
 
     fn lookup(&self, word: &str) -> Option<String> {

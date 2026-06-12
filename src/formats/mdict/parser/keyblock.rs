@@ -85,14 +85,13 @@ pub fn parse_key_block_header<'a>(
             .be_u32()
             .context("mdict: truncated key block header checksum")?;
         ensure!(
-            adler32(buf).context("mdict: failed to compute key block header checksum")?
-                == checksum,
+            adler32(buf).context("mdict: failed to compute key block header checksum")? == checksum,
             "mdict: key block header checksum mismatch"
         );
         let mut br = Reader::new(buf);
-        let block_num = br
-            .be_u64()
-            .context("mdict: truncated key block header block_num")? as usize;
+        let block_num =
+            br.be_u64()
+                .context("mdict: truncated key block header block_num")? as usize;
         let _entry_num = br
             .be_u64()
             .context("mdict: truncated key block header entry_num")?;
@@ -102,9 +101,9 @@ pub fn parse_key_block_header<'a>(
         let info_len = br
             .be_u64()
             .context("mdict: truncated key block header info_len")? as usize;
-        let blocks_len = br
-            .be_u64()
-            .context("mdict: truncated key block header blocks_len")? as usize;
+        let blocks_len =
+            br.be_u64()
+                .context("mdict: truncated key block header blocks_len")? as usize;
         KeyBlockHeader {
             block_num,
             key_block_info_len: info_len,
@@ -113,18 +112,18 @@ pub fn parse_key_block_header<'a>(
     } else {
         let buf = r.bytes(16).context("mdict: truncated key block header")?;
         let mut br = Reader::new(buf);
-        let block_num = br
-            .be_u32()
-            .context("mdict: truncated key block header block_num")? as usize;
+        let block_num =
+            br.be_u32()
+                .context("mdict: truncated key block header block_num")? as usize;
         let _entry_num = br
             .be_u32()
             .context("mdict: truncated key block header entry_num")?;
         let info_len = br
             .be_u32()
             .context("mdict: truncated key block header info_len")? as usize;
-        let blocks_len = br
-            .be_u32()
-            .context("mdict: truncated key block header blocks_len")? as usize;
+        let blocks_len =
+            br.be_u32()
+                .context("mdict: truncated key block header blocks_len")? as usize;
         KeyBlockHeader {
             block_num,
             key_block_info_len: info_len,
@@ -153,10 +152,7 @@ pub fn parse_key_block_info<'a>(
 
     let sizes = if header.version >= 2 {
         // First 4 bytes must be 0x02000000; may be encrypted+zlib-compressed.
-        ensure!(
-            buf.len() >= 8,
-            "mdict: truncated v2 key block info header"
-        );
+        ensure!(buf.len() >= 8, "mdict: truncated v2 key block info header");
         ensure!(
             &buf[0..4] == b"\x02\x00\x00\x00",
             "mdict: key block info magic mismatch"
@@ -187,28 +183,34 @@ pub fn parse_key_block_info<'a>(
 }
 
 /// V1 key block info entry: be_u32 entries | u8 first_char_count | first_chars | u8 last_char_count | last_chars | be_u32 csize | be_u32 dsize
-fn decode_info_v1(
-    data: &[u8],
-    encoding: &str,
-    block_num: usize,
-) -> Result<Vec<KeyBlockSize>> {
+fn decode_info_v1(data: &[u8], encoding: &str, block_num: usize) -> Result<Vec<KeyBlockSize>> {
     let (mult, term) = char_widths(encoding);
     let mut r = Reader::new(data);
     let mut out = Vec::with_capacity(block_num);
     for _ in 0..block_num {
-        let Some(_entries) = r.be_u32() else { bail!("mdict: truncated v1 key block info") };
-        let Some(first_chars) = r.u8() else { bail!("mdict: truncated v1 key block info") };
+        let Some(_entries) = r.be_u32() else {
+            bail!("mdict: truncated v1 key block info")
+        };
+        let Some(first_chars) = r.u8() else {
+            bail!("mdict: truncated v1 key block info")
+        };
         ensure!(
             r.skip(first_chars as usize * mult + term),
             "mdict: truncated v1 key block info (first_chars)"
         );
-        let Some(last_chars) = r.u8() else { bail!("mdict: truncated v1 key block info") };
+        let Some(last_chars) = r.u8() else {
+            bail!("mdict: truncated v1 key block info")
+        };
         ensure!(
             r.skip(last_chars as usize * mult + term),
             "mdict: truncated v1 key block info (last_chars)"
         );
-        let Some(csize) = r.be_u32() else { bail!("mdict: truncated v1 key block info") };
-        let Some(dsize) = r.be_u32() else { bail!("mdict: truncated v1 key block info") };
+        let Some(csize) = r.be_u32() else {
+            bail!("mdict: truncated v1 key block info")
+        };
+        let Some(dsize) = r.be_u32() else {
+            bail!("mdict: truncated v1 key block info")
+        };
         out.push(KeyBlockSize {
             csize: csize as usize,
             dsize: dsize as usize,
@@ -218,28 +220,34 @@ fn decode_info_v1(
 }
 
 /// V2 key block info entry: be_u64 entries | be_u16 first_char_count | first_chars | be_u16 last_char_count | last_chars | be_u64 csize | be_u64 dsize
-fn decode_info_v2(
-    data: &[u8],
-    encoding: &str,
-    block_num: usize,
-) -> Result<Vec<KeyBlockSize>> {
+fn decode_info_v2(data: &[u8], encoding: &str, block_num: usize) -> Result<Vec<KeyBlockSize>> {
     let (mult, term) = char_widths(encoding);
     let mut r = Reader::new(data);
     let mut out = Vec::with_capacity(block_num);
     for _ in 0..block_num {
-        let Some(_entries) = r.be_u64() else { bail!("mdict: truncated v2 key block info") };
-        let Some(first_chars) = r.be_u16() else { bail!("mdict: truncated v2 key block info") };
+        let Some(_entries) = r.be_u64() else {
+            bail!("mdict: truncated v2 key block info")
+        };
+        let Some(first_chars) = r.be_u16() else {
+            bail!("mdict: truncated v2 key block info")
+        };
         ensure!(
             r.skip(first_chars as usize * mult + term),
             "mdict: truncated v2 key block info (first_chars)"
         );
-        let Some(last_chars) = r.be_u16() else { bail!("mdict: truncated v2 key block info") };
+        let Some(last_chars) = r.be_u16() else {
+            bail!("mdict: truncated v2 key block info")
+        };
         ensure!(
             r.skip(last_chars as usize * mult + term),
             "mdict: truncated v2 key block info (last_chars)"
         );
-        let Some(csize) = r.be_u64() else { bail!("mdict: truncated v2 key block info") };
-        let Some(dsize) = r.be_u64() else { bail!("mdict: truncated v2 key block info") };
+        let Some(csize) = r.be_u64() else {
+            bail!("mdict: truncated v2 key block info")
+        };
+        let Some(dsize) = r.be_u64() else {
+            bail!("mdict: truncated v2 key block info")
+        };
         out.push(KeyBlockSize {
             csize: csize as usize,
             dsize: dsize as usize,

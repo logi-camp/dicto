@@ -26,6 +26,9 @@ pub struct DictEntry {
     pub path: String,
     #[serde(default = "default_enabled")]
     pub enabled: bool,
+    /// User-chosen short name for tab titles. Empty string means "auto-generate".
+    #[serde(default)]
+    pub short_name: String,
 }
 
 fn default_enabled() -> bool {
@@ -72,6 +75,7 @@ fn merge_with_disk(mut s: Settings) -> Settings {
             s.dictionaries.push(DictEntry {
                 path: path.clone(),
                 enabled: true,
+                short_name: String::new(),
             });
             existing.insert(path);
         }
@@ -123,6 +127,22 @@ pub fn enabled_mdx() -> Vec<String> {
         .filter(|d| d.enabled)
         .map(|d| d.path)
         .collect()
+}
+
+/// Look up a user-specified short_name override for the given MDX path.
+/// Returns `None` if no override is set (meaning auto-generate).
+pub fn short_name_override(mdx_path: &str) -> Option<String> {
+    let s = current();
+    s.dictionaries
+        .iter()
+        .find(|d| d.path == mdx_path)
+        .and_then(|d| {
+            if d.short_name.is_empty() {
+                None
+            } else {
+                Some(d.short_name.clone())
+            }
+        })
 }
 
 /// MDD paths corresponding to enabled MDX entries (matched by stem).
