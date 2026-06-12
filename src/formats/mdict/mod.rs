@@ -11,6 +11,7 @@ use memmap2::Mmap;
 use tracing::{info, warn};
 
 use crate::dictionary::Dictionary;
+use parser::header::{header_stylesheet_to_css, parse_attrs};
 use parser::mdd::{Mdd, normalize_path};
 use parser::mdx::Mdx;
 use parser::recordblock::decompress_record_block;
@@ -106,6 +107,34 @@ fn read_entry(
     let end = (end as usize).min(decompressed.len());
     let start = (start as usize).min(end);
     Some(decompressed[start..end].to_vec())
+}
+
+// ── header stylesheet extraction ─────────────────────────────────────────────
+
+/// Read the MDX header and return the CSS derived from its `StyleSheet` attribute.
+/// Returns an empty string if the file cannot be read or has no stylesheet.
+pub fn mdx_header_stylesheet(mdx_path: &str) -> String {
+    let Ok(data) = std::fs::read(mdx_path) else {
+        return String::new();
+    };
+    let len = match data.get(0..4) {
+        Some(b) => u32::from_be_bytes(b.try_into().unwrap()) as usize,
+        None => return String::new(),
+    };
+    let buf = match data.get(4..4 + len) {
+        Some(b) => b,
+        None => return String::new(),
+    };
+    use encoding::{DecoderTrap, Encoding, all::UTF_16LE};
+    let xml = match UTF_16LE.decode(buf, DecoderTrap::Strict) {
+        Ok(s) => s,
+        Err(_) => return String::new(),
+    };
+    let attrs = parse_attrs(&xml);
+    match attrs.get("StyleSheet") {
+        Some(raw) if !raw.trim().is_empty() => header_stylesheet_to_css(raw),
+        _ => String::new(),
+    }
 }
 
 // ── MdxDictionary ─────────────────────────────────────────────────────────────
@@ -387,40 +416,47 @@ fn build_mdx_index(file: &str, force: bool) -> anyhow::Result<()> {
             return Ok(());
         }
     }
-    info!("indexing MDX {} -> {}", file, fst_path);
-    let f = File::open(file)?;
-    let mmap = unsafe { memmap2::Mmap::map(&f)? };
-    let mdx = Mdx::parse(&mmap);
+    let res = (|| -> anyhow::Result<()> {
+        info!("indexing MDX {} -> {}", file, fst_path);
+        let f = File::open(file)?;
+        let mmap = unsafe { memmap2::Mmap::map(&f)? };
+        let mdx = Mdx::parse(&mmap)?;
 
-    // lowercase + sort + dedup (keep first occurrence of each lowercased key)
-    let mut entries: Vec<(String, [u8; REC_LEN])> = mdx
-        .entries
-        .iter()
-        .map(|e| {
-            (
-                e.text.to_lowercase(),
-                encode_offset(
-                    e.file_offset,
-                    e.block_csize,
-                    e.block_dsize,
-                    e.start_in_block,
-                    e.end_in_block,
-                ),
-            )
-        })
-        .collect();
-    entries.sort_unstable_by(|a, b| a.0.cmp(&b.0));
-    entries.dedup_by(|a, b| a.0 == b.0); // a is later; returning true removes a, keeps b (first)
+        let mut entries: Vec<(String, [u8; REC_LEN])> = mdx
+            .entries
+            .iter()
+            .map(|e| {
+                (
+                    e.text.to_lowercase(),
+                    encode_offset(
+                        e.file_offset,
+                        e.block_csize,
+                        e.block_dsize,
+                        e.start_in_block,
+                        e.end_in_block,
+                    ),
+                )
+            })
+            .collect();
+        entries.sort_unstable_by(|a, b| a.0.cmp(&b.0));
+        entries.dedup_by(|a, b| a.0 == b.0);
 
-    let mut off_writer = BufWriter::new(File::create(&off_path)?);
-    let mut builder = MapBuilder::new(BufWriter::new(File::create(&fst_path)?))?;
-    for (row, (key, rec)) in entries.iter().enumerate() {
-        builder.insert(key.as_bytes(), row as u64)?;
-        off_writer.write_all(rec)?;
+        let mut off_writer = BufWriter::new(File::create(&off_path)?);
+        let mut builder = MapBuilder::new(BufWriter::new(File::create(&fst_path)?))?;
+        for (row, (key, rec)) in entries.iter().enumerate() {
+            builder.insert(key.as_bytes(), row as u64)?;
+            off_writer.write_all(rec)?;
+        }
+        builder.finish()?;
+        info!("MDX indexed {} entries: {}", entries.len(), fst_path);
+        Ok(())
+    })();
+
+    if res.is_err() {
+        fs::remove_file(&fst_path).ok();
+        fs::remove_file(&off_path).ok();
     }
-    builder.finish()?;
-    info!("MDX indexed {} entries: {}", entries.len(), fst_path);
-    Ok(())
+    res
 }
 
 fn build_mdd_index(file: &str, force: bool) -> anyhow::Result<()> {
@@ -438,41 +474,47 @@ fn build_mdd_index(file: &str, force: bool) -> anyhow::Result<()> {
         fs::remove_file(&fst_path)?;
         fs::remove_file(&off_path).ok();
     }
+    let res = (|| -> anyhow::Result<()> {
+        info!("indexing MDD {} -> {}", file, fst_path);
+        let f = File::open(file)?;
+        let mmap = unsafe { memmap2::Mmap::map(&f)? };
+        let mdd = Mdd::parse(&mmap)?;
 
-    info!("indexing MDD {} -> {}", file, fst_path);
-    let f = File::open(file)?;
-    let mmap = unsafe { memmap2::Mmap::map(&f)? };
-    let mdd = Mdd::parse(&mmap);
+        let mut entries: Vec<(String, [u8; REC_LEN])> = mdd
+            .entries
+            .iter()
+            .map(|e| {
+                (
+                    normalize_path(&e.path),
+                    encode_offset(
+                        e.file_offset,
+                        e.block_csize,
+                        e.block_dsize,
+                        e.start_in_block,
+                        e.end_in_block,
+                    ),
+                )
+            })
+            .collect();
+        entries.sort_unstable_by(|a, b| a.0.cmp(&b.0));
+        entries.dedup_by(|a, b| a.0 == b.0);
 
-    // normalize + sort + dedup (keep first occurrence of each key)
-    let mut entries: Vec<(String, [u8; REC_LEN])> = mdd
-        .entries
-        .iter()
-        .map(|e| {
-            (
-                normalize_path(&e.path),
-                encode_offset(
-                    e.file_offset,
-                    e.block_csize,
-                    e.block_dsize,
-                    e.start_in_block,
-                    e.end_in_block,
-                ),
-            )
-        })
-        .collect();
-    entries.sort_unstable_by(|a, b| a.0.cmp(&b.0));
-    entries.dedup_by(|a, b| a.0 == b.0);
+        let mut off_writer = BufWriter::new(File::create(&off_path)?);
+        let mut builder = MapBuilder::new(BufWriter::new(File::create(&fst_path)?))?;
+        for (row, (key, rec)) in entries.iter().enumerate() {
+            builder.insert(key.as_bytes(), row as u64)?;
+            off_writer.write_all(rec)?;
+        }
+        builder.finish()?;
+        info!("MDD indexed {} entries: {}", entries.len(), fst_path);
+        Ok(())
+    })();
 
-    let mut off_writer = BufWriter::new(File::create(&off_path)?);
-    let mut builder = MapBuilder::new(BufWriter::new(File::create(&fst_path)?))?;
-    for (row, (key, rec)) in entries.iter().enumerate() {
-        builder.insert(key.as_bytes(), row as u64)?;
-        off_writer.write_all(rec)?;
+    if res.is_err() {
+        fs::remove_file(&fst_path).ok();
+        fs::remove_file(&off_path).ok();
     }
-    builder.finish()?;
-    info!("MDD indexed {} entries: {}", entries.len(), fst_path);
-    Ok(())
+    res
 }
 
 fn mdd_fst_empty(fst_path: &str) -> bool {

@@ -18,21 +18,22 @@ pub struct Mdd {
 }
 
 impl Mdd {
-    pub fn parse(data: &[u8]) -> Self {
+    pub fn parse(data: &[u8]) -> anyhow::Result<Self> {
         let file_start = data.as_ptr() as usize;
 
         let (data, mut header) = parse_header(data);
         // MDD key blocks always use UTF-16LE regardless of the header Encoding field.
         header.encoding = "UTF-16LE".to_string();
 
-        let (data, kbh) = parse_key_block_header(data, &header);
-        let (data, sizes) = parse_key_block_info(data, kbh.key_block_info_len, &header);
-        let (data, entries) = parse_key_blocks(data, kbh.key_blocks_len, &header, &sizes);
+        let (data, kbh) = parse_key_block_header(data, &header)?;
+        let (data, sizes) =
+            parse_key_block_info(data, kbh.key_block_info_len, &header, kbh.block_num)?;
+        let (data, entries) = parse_key_blocks(data, kbh.key_blocks_len, &header, &sizes)?;
         let (data, block_sizes) = parse_record_block_sizes(data, header.version);
 
         let record_section_start = data.as_ptr() as usize - file_start;
         let entries = compute_entries(&entries, &block_sizes, record_section_start);
-        Mdd { entries }
+        Ok(Mdd { entries })
     }
 }
 

@@ -100,7 +100,9 @@ async fn run(state: Entity<DictState>, cx: &mut AsyncApp) {
     info!("background indexing complete");
 }
 
-/// Build a per-dictionary stylesheet by combining two sources:
+/// Build a per-dictionary stylesheet by combining three sources:
+/// (0) the `StyleSheet` attribute embedded in the `.mdx` header (class-based
+///     inline formatting used by older dictionaries like WordNet 2.0)
 /// (1) any `.css` resources stored *inside* the dict's `.mdd`
 /// (2) sibling `.css` files on disk whose stem matches the dict stem
 /// (`<stem>.css` or `<stem>_*.css`). Per-dict isolation prevents one
@@ -117,6 +119,12 @@ pub fn load_stylesheets() {
         };
 
         let mut sheet = html::Stylesheet::default();
+
+        // (0) Header-embedded StyleSheet (class-number → formatting).
+        let header_css = mdict_rs::formats::mdict::mdx_header_stylesheet(&mdx);
+        if !header_css.is_empty() {
+            sheet.extend(html::Stylesheet::parse(&header_css));
+        }
 
         for (_, body) in mdict_rs::registry::css_for_dict(stem) {
             sheet.extend(html::Stylesheet::parse(&body));

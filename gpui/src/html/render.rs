@@ -65,18 +65,47 @@ fn heading(idx: usize, level: u8, inlines: &[Inline]) -> gpui::AnyElement {
     paragraph(idx, inlines, size, Some(FontWeight::BOLD))
 }
 
-/// Wrap a block element with CSS margins (top / bottom / left).
-/// Margins are clamped so a single misbehaving rule can't push content
-/// off-screen.
+/// Wrap a block element with CSS margins, padding, border-radius and
+/// background. Margins are clamped so a single misbehaving rule can't
+/// push content off-screen.
 fn with_layout(inner: gpui::AnyElement, layout: &BlockLayout) -> gpui::AnyElement {
     let mt = layout.margin_top_px.clamp(0.0, 80.0);
     let mb = layout.margin_bottom_px.clamp(0.0, 80.0);
     let ml = layout.margin_left_px.clamp(0.0, 80.0);
+    let pt = layout.padding_top_px.clamp(0.0, 80.0);
+    let pb = layout.padding_bottom_px.clamp(0.0, 80.0);
+    let pl = layout.padding_left_px.clamp(0.0, 80.0);
+    let pr = layout.padding_right_px.clamp(0.0, 80.0);
+    let br = layout.border_radius_px.clamp(0.0, 40.0);
     let bg = layout.bg_color.as_ref().and_then(|c| parse_bg_color(c));
-    if mt == 0.0 && mb == 0.0 && ml == 0.0 && bg.is_none() {
+    if mt == 0.0
+        && mb == 0.0
+        && ml == 0.0
+        && pt == 0.0
+        && pb == 0.0
+        && pl == 0.0
+        && pr == 0.0
+        && br == 0.0
+        && bg.is_none()
+    {
         return inner;
     }
     let mut el = div().w_full().pt(px(mt)).pb(px(mb)).pl(px(ml));
+    if pt > 0.0 {
+        el = el.pt(px(pt));
+    }
+    if pb > 0.0 {
+        el = el.pb(px(pb));
+    }
+    if pl > 0.0 {
+        el = el.pl(px(pl));
+    }
+    if pr > 0.0 {
+        el = el.pr(px(pr));
+    }
+    if br > 0.0 {
+        el = el.rounded(px(br));
+    }
     if let Some(bg) = bg {
         el = el.bg(bg);
     }
@@ -353,6 +382,27 @@ fn styled_span(
         .min_w(px(0.));
     if let Some(bg) = bg {
         el = el.bg(bg);
+        // Non-link spans with a background are "chips" (e.g. WordNet
+        // <span class="pos">): apply CSS box-model properties so they
+        // get padding, rounding and spacing between adjacent chips.
+        if style.border_radius_px > 0.0 {
+            el = el.rounded(px(style.border_radius_px));
+        }
+        if style.padding_left_px > 0.0 {
+            el = el.pl(px(style.padding_left_px));
+        }
+        if style.padding_right_px > 0.0 {
+            el = el.pr(px(style.padding_right_px));
+        }
+        if style.padding_top_px > 0.0 {
+            el = el.pt(px(style.padding_top_px));
+        }
+        if style.padding_bottom_px > 0.0 {
+            el = el.pb(px(style.padding_bottom_px));
+        }
+        if style.margin_right_px > 0.0 {
+            el = el.mr(px(style.margin_right_px));
+        }
     }
     if style.italic {
         el = el.italic();
@@ -391,7 +441,6 @@ fn sound_button(
         btn = btn
             .px(px(4.))
             .py(px(1.))
-            .mx(px(1.))
             .rounded(px(4.))
             .hover(|s| s.bg(colors::border()));
         if let Some(bytes) = mdict_rs::query::lookup_resource(src.as_ref()) {
@@ -410,12 +459,15 @@ fn sound_button(
             .and_then(|c| parse_text_color(c))
             .unwrap_or(colors::primary());
         let size_px = style.font_size_px.unwrap_or(16.0);
-        btn = btn.child(
-            svg()
-                .path("icons/play.svg")
-                .text_color(color)
-                .size(px(size_px)),
-        );
+        btn = btn
+            .px(px(2.))
+            .hover(|s| s.bg(colors::border()))
+            .child(
+                svg()
+                    .path("icons/play.svg")
+                    .text_color(color)
+                    .size(px(size_px)),
+            );
     } else {
         let display: SharedString = if label.trim().is_empty() {
             SharedString::from("▶")

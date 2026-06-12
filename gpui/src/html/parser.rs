@@ -22,6 +22,11 @@ pub struct BlockLayout {
     pub margin_bottom_px: f32,
     pub margin_left_px: f32,
     pub bg_color: Option<SharedString>,
+    pub padding_top_px: f32,
+    pub padding_bottom_px: f32,
+    pub padding_left_px: f32,
+    pub padding_right_px: f32,
+    pub border_radius_px: f32,
 }
 
 #[derive(Debug, Clone)]
@@ -440,6 +445,11 @@ impl Builder {
                 margin_bottom_px: s.margin_bottom_px,
                 margin_left_px: s.margin_left_px,
                 bg_color: s.bg_color.clone(),
+                padding_top_px: s.padding_top_px,
+                padding_bottom_px: s.padding_bottom_px,
+                padding_left_px: s.padding_left_px,
+                padding_right_px: s.padding_right_px,
+                border_radius_px: s.border_radius_px,
             },
             None => BlockLayout::default(),
         }
@@ -818,12 +828,17 @@ fn handle_open(
     }
 
     // Build the merged style for this element. Inheritable text styles
-    // are inherited from the parent; box-model fields (margins) and
-    // element backgrounds should NOT cascade.
+    // are inherited from the parent; box-model fields (margins, padding,
+    // border-radius) and element backgrounds should NOT cascade.
     let mut style = b.current_style();
     style.margin_top_px = 0.0;
     style.margin_bottom_px = 0.0;
     style.margin_left_px = 0.0;
+    style.padding_top_px = 0.0;
+    style.padding_right_px = 0.0;
+    style.padding_bottom_px = 0.0;
+    style.padding_left_px = 0.0;
+    style.border_radius_px = 0.0;
     if block_display {
         style.bg_color = None;
     }

@@ -14,6 +14,7 @@ HTML string
 Stylesheet loaded once at startup from:
   – CSS resources inside each dict's .mdd
   – sibling `<stem>.css` / `<stem>_*.css` files on disk
+  – the MDX header's `StyleSheet` attribute (class-number → CSS)
 
 DictState.results[active].blocks  ─►  render_blocks(&blocks)
    ─►  GPUI element tree
@@ -110,9 +111,13 @@ pub struct Style {
 ```
 
 **Text properties inherit** (clone from parent before mutating).
-**Margins do not** (reset to zero each open) — matches CSS box
-semantics. Inline box-model fields are kept because some dictionaries
-style anchors as chips / buttons rather than plain text spans.
+**Box-model properties do not** (margins, padding, border-radius are
+reset to zero each open) — matches CSS box semantics. Inline
+box-model fields are kept because some dictionaries style anchors as
+chips / buttons rather than plain text spans. Non-link inline spans
+with a background also receive box-model styling so CSS-driven chips
+like WordNet's `<span class="pos">` render with proper padding, rounding
+and spacing.
 
 ### Inline buffer & cross-run whitespace
 
@@ -141,12 +146,14 @@ pub enum Block {
 pub struct BlockLayout {
     pub margin_top_px, margin_bottom_px, margin_left_px: f32,
     pub bg_color: Option<SharedString>,
+    pub padding_top_px, padding_bottom_px, padding_left_px, padding_right_px: f32,
+    pub border_radius_px: f32,
 }
 ```
 
 `BlockLayout` is captured from the current style frame at flush
-time, so margins and block-level backgrounds set via CSS on the block
-element propagate to the emitted `Block`.
+time, so margins, padding, border-radius and block-level backgrounds
+set via CSS on the block element propagate to the emitted `Block`.
 
 ## CSS subset (css.rs)
 
@@ -213,6 +220,27 @@ semantics across dictionaries. A global stylesheet would mean an
 LDOCE5 rule like `.hw { display: none }` wiping out a Cambridge
 headword using the same class name. Per-dict scoping prevents that.
 
+### MDX header StyleSheet
+
+Older MDX dictionaries (e.g. WordNet 2.0) embed a `StyleSheet`
+attribute in the MDX header rather than shipping a separate `.css`
+file or `.mdd` resources. The attribute maps numbered CSS classes
+to inline HTML formatting templates:
+
+```
+1
+<font color=red size=+2><b>
+</b></font>
+2
+<font color=#990066><I>(
+)</I></font>
+```
+
+At load time, `header_stylesheet_to_css` converts each template
+into a real `.N { ... }` CSS rule by extracting color, font-size,
+bold, and italic from the HTML tags. This is injected as source (0)
+before MDD and disk CSS in `load_stylesheets`.
+
 If no CSS is found for a dictionary, `parse_styled` falls back to an
 empty stylesheet — the dictionary renders with hard-coded HTML tag
 defaults only (which is still legible, just unstyled).
@@ -233,9 +261,9 @@ detail panel. Cost matters here.
 | `Image` | Bytes from `lookup_resource` → cached to `/tmp/mdict-rs-cache/<hash>.<ext>` → `gpui::img(PathBuf)`. |
 
 Each emitted block is wrapped by `with_layout(...)` in a
-padding-bearing div if the `BlockLayout` has any non-zero margins.
-Margins are clamped to 0..80 px so a misbehaving CSS rule can't push
-content off-screen.
+padding-bearing div if the `BlockLayout` has any non-zero margins,
+padding, border-radius or background. Values are clamped so a
+misbehaving CSS rule can't push content off-screen.
 
 ### Inline runs
 
