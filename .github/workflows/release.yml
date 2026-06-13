@@ -39,6 +39,9 @@ jobs:
 
   build-windows:
     runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
 
@@ -46,6 +49,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-pc-windows-gnu
+          toolchain: stable-x86_64-pc-windows-gnu
 
       - name: Install Inno Setup
         run: choco install innosetup -y
@@ -55,14 +59,15 @@ jobs:
 
       - name: Create portable package
         run: |
-          mkdir portable
+          mkdir -p portable
           cp target/x86_64-pc-windows-gnu/release/dicto.exe portable/
           cp LICENSE portable/
           cp README.md portable/
-          Compress-Archive -Path portable/* -DestinationPath dicto-${{ github.ref_name }}-windows-x86_64-portable.zip
+          cd portable
+          zip -r ../dicto-${{ github.ref_name }}-windows-x86_64-portable.zip .
 
       - name: Create Inno Setup installer
-        run: iscc packaging\windows\installer.iss /DAppVersion=${{ github.ref_name }}
+        run: iscc packaging/windows/installer.iss /DAppVersion=${{ github.ref_name }} /DTarget=x86_64-pc-windows-gnu
 
       - uses: actions/upload-artifact@v4
         with:
