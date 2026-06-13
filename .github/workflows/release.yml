@@ -42,23 +42,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-pc-windows-msvc
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
 
-      - name: Install Inno Setup and dependencies
-        run: |
-          choco install innosetup -y
-          choco install imagemagick -y
-          choco install rsvg-convert -y
+      - name: Install Inno Setup
+        run: choco install innosetup -y
 
       - name: Build Windows executable (release)
-        run: cargo build --release --package dicto --target x86_64-pc-windows-msvc
+        run: cargo build --release --package dicto
 
       - name: Create portable package
         run: |
           mkdir portable
-          cp target/x86_64-pc-windows-msvc/release/dicto.exe portable/
+          cp target/release/dicto.exe portable/
           cp LICENSE portable/
           cp README.md portable/
           Compress-Archive -Path portable/* -DestinationPath dicto-${{ github.ref_name }}-windows-x86_64-portable.zip
