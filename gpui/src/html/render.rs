@@ -229,7 +229,7 @@ fn render_link_group(
         .id(SharedString::from(format!("grp-{block_idx}-{run_idx}")))
         .items_center()
         .gap(px(0.))
-        .flex_shrink()
+        .flex_shrink(0.)
         .min_w(px(0.));
 
     if let Some(bg) = first
@@ -357,7 +357,7 @@ fn styled_span(
             .font_weight(font_weight)
             .text_color(color)
             .cursor_pointer()
-            .flex_shrink()
+            .flex_shrink(0.)
             .min_w(px(0.))
             .on_click(move |_, _, _cx| {
                 debug!("entry link clicked: {target}");
@@ -378,7 +378,7 @@ fn styled_span(
         .text_size(px(size_px))
         .font_weight(font_weight)
         .text_color(color)
-        .flex_shrink()
+        .flex_shrink(0.)
         .min_w(px(0.));
     if let Some(bg) = bg {
         el = el.bg(bg);
@@ -425,7 +425,7 @@ fn sound_button(
     let mut btn = div()
         .id(SharedString::from(format!("snd-{block_idx}-{run_idx}")))
         .cursor_pointer()
-        .flex_shrink()
+        .flex_shrink(0.)
         .min_w(px(0.));
 
     if style.margin_left_px > 0.0 {
