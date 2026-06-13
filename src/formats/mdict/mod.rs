@@ -2,6 +2,8 @@ pub mod parser;
 
 use std::fs::{self, File};
 use std::io::{BufWriter, Write};
+#[cfg(not(unix))]
+use std::io::Read;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 

@@ -37,8 +37,44 @@ jobs:
           name: dicto-x86_64
           path: dicto-*.tar.gz
 
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Install Inno Setup and dependencies
+        run: |
+          choco install innosetup -y
+          choco install imagemagick -y
+          choco install rsvg-convert -y
+
+      - name: Build Windows executable (release)
+        run: cargo build --release --package dicto --target x86_64-pc-windows-msvc
+
+      - name: Create portable package
+        run: |
+          mkdir portable
+          cp target/x86_64-pc-windows-msvc/release/dicto.exe portable/
+          cp LICENSE portable/
+          cp README.md portable/
+          Compress-Archive -Path portable/* -DestinationPath dicto-${{ github.ref_name }}-windows-x86_64-portable.zip
+
+      - name: Create Inno Setup installer
+        run: iscc packaging\windows\installer.iss /DAppVersion=${{ github.ref_name }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dicto-windows
+          path: |
+            dicto-*-windows-x86_64-portable.zip
+            Output/*.exe
+
   release:
-    needs: build
+    needs: [build, build-windows]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -50,4 +86,4 @@ jobs:
 
       - uses: softprops/action-gh-release@v2
         with:
-          files: artifacts/*.tar.gz
+          files: artifacts/*

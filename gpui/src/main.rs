@@ -1,3 +1,5 @@
+#![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
+
 mod app;
 mod audio;
 mod colors;
@@ -6,10 +8,11 @@ mod html;
 mod indexing;
 mod state;
 
-use std::time::Duration;
+use std::{borrow::Cow, time::Duration};
 
 use gpui::{
-    App, AppContext as _, Bounds, WindowBounds, WindowDecorations, WindowOptions, px, size,
+    App, AppContext as _, AssetSource, Bounds, SharedString, WindowBounds, WindowDecorations,
+    WindowOptions, px, size,
 };
 use gpui_component::{Root, Theme, ThemeMode};
 use gpui_platform::application;
@@ -21,6 +24,46 @@ use tray_icon::{
 
 use crate::app::DictApp;
 use crate::state::DictState;
+
+struct AppAssets;
+
+const WINDOW_CLOSE_SVG: &[u8] = br##"<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path fill="#000" d="M6.7 5.3 12 10.6l5.3-5.3 1.4 1.4-5.3 5.3 5.3 5.3-1.4 1.4-5.3-5.3-5.3 5.3-1.4-1.4 5.3-5.3-5.3-5.3z"/></svg>"##;
+const WINDOW_MAXIMIZE_SVG: &[u8] = br##"<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path fill="#000" d="M5 5h14v14H5zm2 2v10h10V7z"/></svg>"##;
+const WINDOW_MINIMIZE_SVG: &[u8] = br##"<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path fill="#000" d="M5 11h14v2H5z"/></svg>"##;
+const WINDOW_RESTORE_SVG: &[u8] = br##"<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path fill="#000" d="M8 5h11v11h-2V7H8z"/><path fill="#000" d="M5 8h11v11H5zm2 2v7h7v-7z"/></svg>"##;
+
+impl AssetSource for AppAssets {
+    fn load(&self, path: &str) -> gpui::Result<Option<Cow<'static, [u8]>>> {
+        let local = match path {
+            "icons/window-close.svg" => Some(WINDOW_CLOSE_SVG),
+            "icons/window-maximize.svg" => Some(WINDOW_MAXIMIZE_SVG),
+            "icons/window-minimize.svg" => Some(WINDOW_MINIMIZE_SVG),
+            "icons/window-restore.svg" => Some(WINDOW_RESTORE_SVG),
+            _ => None,
+        };
+
+        if let Some(bytes) = local {
+            return Ok(Some(Cow::Borrowed(bytes)));
+        }
+
+        gpui_component_assets::Assets.load(path)
+    }
+
+    fn list(&self, path: &str) -> gpui::Result<Vec<SharedString>> {
+        let mut assets = gpui_component_assets::Assets.list(path)?;
+        for extra in [
+            "icons/window-close.svg",
+            "icons/window-maximize.svg",
+            "icons/window-minimize.svg",
+            "icons/window-restore.svg",
+        ] {
+            if extra.starts_with(path) && !assets.iter().any(|item| item.as_ref() == extra) {
+                assets.push(extra.into());
+            }
+        }
+        Ok(assets)
+    }
+}
 
 fn main() {
     #[cfg(target_os = "linux")]
@@ -47,7 +90,7 @@ fn main() {
     indexing::load_stylesheets();
 
     let app = application();
-    app.with_assets(gpui_component_assets::Assets)
+    app.with_assets(AppAssets)
         .run(|cx: &mut App| {
             gpui_component::init(cx);
             Theme::change(ThemeMode::Dark, None, cx);
@@ -118,7 +161,7 @@ fn open_dictionary_window(cx: &mut App) {
             window_decorations: Some(WindowDecorations::Client),
             titlebar: Some(gpui::TitlebarOptions {
                 title: Some("Dicto".into()),
-                appears_transparent: false,
+                appears_transparent: cfg!(target_os = "windows"),
                 ..Default::default()
             }),
             window_min_size: Some(size(px(600.), px(400.))),

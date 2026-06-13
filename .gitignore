@@ -17,3 +17,11 @@ Cargo.lock
 mdx/
 
 .claude/
+
+# Windows build artifacts
+Output/
+portable/
+tmp_*.png
+
+# Windows packaging (exclude icon files)
+*.exe
