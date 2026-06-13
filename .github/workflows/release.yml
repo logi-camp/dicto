@@ -42,19 +42,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Rust
+      - name: Set up Rust with GNU toolchain
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-gnu
 
       - name: Install Inno Setup
         run: choco install innosetup -y
 
       - name: Build Windows executable (release)
-        run: cargo build --release --package dicto
+        run: cargo build --release --package dicto --target x86_64-pc-windows-gnu
 
       - name: Create portable package
         run: |
           mkdir portable
-          cp target/release/dicto.exe portable/
+          cp target/x86_64-pc-windows-gnu/release/dicto.exe portable/
           cp LICENSE portable/
           cp README.md portable/
           Compress-Archive -Path portable/* -DestinationPath dicto-${{ github.ref_name }}-windows-x86_64-portable.zip
