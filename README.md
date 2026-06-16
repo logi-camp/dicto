@@ -15,10 +15,23 @@
 
 ## Installation
 
-### Arch Linux (AUR-style)
+### Arch Linux (AUR)
+
+Install from AUR using your preferred helper (e.g. `yay`, `paru`, `pikaur`):
 
 ```bash
-cd packaging/arch
+# Build from source
+yay -S dicto
+
+# Or install pre-built binary
+yay -S dicto-bin
+```
+
+Or manually:
+
+```bash
+git clone https://aur.archlinux.org/dicto.git
+cd dicto
 makepkg -si
 ```
 
