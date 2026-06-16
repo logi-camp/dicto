@@ -20,15 +20,27 @@ pub struct Header {
 ///
 /// Layout: be_u32 length | UTF-16LE XML-ish attrs | le_u32 adler32 checksum.
 /// Returns remaining bytes after the header.
-pub fn parse_header(data: &[u8]) -> (&[u8], Header) {
+pub fn parse_header(data: &[u8]) -> anyhow::Result<(&[u8], Header)> {
+    if data.len() < 8 {
+        anyhow::bail!("file too small to contain a valid header ({} bytes)", data.len());
+    }
     let len = u32::from_be_bytes(data[0..4].try_into().unwrap()) as usize;
+    if data.len() < 8 + len {
+        anyhow::bail!(
+            "header extends beyond file (header len={}, file len={})",
+            len,
+            data.len()
+        );
+    }
     let buf = &data[4..4 + len];
     let checksum = u32::from_le_bytes(data[4 + len..8 + len].try_into().unwrap());
-    assert_eq!(adler32(buf).unwrap(), checksum, "header adler32 mismatch");
+    if adler32(buf).unwrap() != checksum {
+        anyhow::bail!("header adler32 mismatch");
+    }
 
     let xml = UTF_16LE
         .decode(buf, DecoderTrap::Strict)
-        .expect("header is not valid UTF-16LE");
+        .map_err(|e| anyhow::anyhow!("header is not valid UTF-16LE: {e}"))?;
 
     let attrs = parse_attrs(&xml);
     info!("mdict header attrs: {:?}", attrs);
@@ -48,7 +60,7 @@ pub fn parse_header(data: &[u8]) -> (&[u8], Header) {
     let title = attrs.get("Title").cloned().unwrap_or_default();
     let description = attrs.get("Description").cloned().unwrap_or_default();
 
-    (
+    Ok((
         &data[8 + len..],
         Header {
             version,
@@ -57,7 +69,7 @@ pub fn parse_header(data: &[u8]) -> (&[u8], Header) {
             title,
             description,
         },
-    )
+    ))
 }
 
 /// Scan `key="value"` pairs from the MDX XML-ish header string.
