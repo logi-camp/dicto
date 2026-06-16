@@ -21,7 +21,7 @@ impl Mdd {
     pub fn parse(data: &[u8]) -> anyhow::Result<Self> {
         let file_start = data.as_ptr() as usize;
 
-        let (data, mut header) = parse_header(data);
+        let (data, mut header) = parse_header(data)?;
         // MDD key blocks always use UTF-16LE regardless of the header Encoding field.
         header.encoding = "UTF-16LE".to_string();
 

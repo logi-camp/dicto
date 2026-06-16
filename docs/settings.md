@@ -70,9 +70,9 @@ closes automatically when the main window closes.
 The settings dialog contains:
 
 1. **Title** — "Settings" with a close button (✕).
-2. **Tab bar** — `TabBar` with "Dictionaries" and "Import" tabs,
-   controlled by `DictState.settings_active_tab`.
-3. **Content** — renders either the Dictionaries tab or Import tab.
+2. **Tab bar** — `TabBar` with "Dictionaries", "Import", and "Download" tabs,
+   controlled by `DictState.settings_active_tab` (0, 1, 2).
+3. **Content** — renders the active tab.
 4. **Footer** — Cancel and Save buttons.
 
 The dialog is opened in `app.rs::cog_button()` and calls
@@ -110,20 +110,11 @@ working copy is in-memory only — it's discarded on close.
 
 [gpui/src/components/init_modal.rs](../gpui/src/components/init_modal.rs) — `import_tab_content()`
 
-The same component is shared with the first-run init modal (see below).
+The same component is shared with the first-run init dialog (see below).
 Provides a combined drag-and-drop / click-to-browse drop zone,
-a per-session progress bar, and a scrollable file list. The ✕ close
-button is hidden while an import is in progress.
+a per-session progress bar, and a scrollable file list.
 
-### First-run init modal
-
-When `~/.config/dicto/dicts/` contains no `.mdx` files at startup,
-`DictState.show_init_modal` is set to `true` and the init overlay
-(`init_modal::overlay`) covers the whole window, prompting the user
-to import dictionaries before the app is usable.
-
-`start_import(paths, state, cx)` handles both entry points (init modal
-and Settings → Import tab):
+`start_import(paths, state, cx)` handles the import:
 
 1. Validate: only `.mdx` and `.mdd` extensions accepted; others get an
    immediate `Error` row.
@@ -132,8 +123,49 @@ and Settings → Import tab):
    `build_index(false)`, `registry::reload()`, load per-dict CSS.
 4. For `.mdd`: copy only — the companion file is auto-discovered by stem.
 5. After all files finish, refresh `state.dictionaries` from disk.
-   The modal stays open so the user can review results; it closes
-   only when the user clicks Done/✕, which also clears `state.import_files`.
+
+### Download tab
+
+[gpui/src/components/download_panel.rs](../gpui/src/components/download_panel.rs)
+
+Fetches a remote catalog (`catalog.json` from `CATALOG_URL` in
+[gpui/src/catalog.rs](../gpui/src/catalog.rs)) and displays available
+dictionaries. Each entry shows name, description, language pair,
+version, size, and license.
+
+**Install states** — determined by `DictCatalogEntry.install_status()`
+which checks `~/.config/dicto/dicts/<id>/.version`:
+
+| State | Button | Behavior |
+|-------|--------|----------|
+| `NotInstalled` | Blue "Download" | Downloads files → adds to settings → indexes → writes `.version` |
+| `UpToDate` | Green "✓ Installed" | No action |
+| `UpdateAvailable` | Orange "Update" | Re-downloads and re-indexes |
+
+**Download flow** (`start_download` in `download_panel.rs`):
+
+1. Download all files for the entry to `~/.config/dicto/dicts/<id>/`
+   on the background executor.
+2. A progress timer polls `SharedProgress` (Arc<Mutex>) every 200ms
+   and updates `DictDownloadStatus::Downloading` on the UI.
+3. After download: add `.mdx` to `settings.toml`, build FST index
+   on background executor, reload registry, load stylesheets.
+4. Write `.version` file to mark the installed version.
+5. Non-`.mdx`/`.mdd` files (CSS, JS, PNG) are downloaded but skipped
+   during import — they're companion resources used by the dictionary
+   renderer.
+
+**Catalog caching** — the fetched catalog is cached at
+`~/.config/dicto/catalog-cache.json` with a 24-hour TTL.
+
+### First-run init dialog
+
+When `~/.config/dicto/dicts/` contains no `.mdx` files at startup,
+`DictState.show_init_modal` is set to `true`. On the first render,
+`open_get_dictionaries_dialog()` (in `app.rs`) opens a dialog with
+Download and Import tabs (Download first). The dialog uses the same
+`download_panel::panel_content` and `init_modal::import_tab_content`
+components as the settings dialog.
 
 ### Dictionary detail dialog
 

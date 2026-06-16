@@ -20,7 +20,7 @@ pub struct Mdx {
 impl Mdx {
     pub fn parse(data: &[u8]) -> anyhow::Result<Self> {
         let file_start = data.as_ptr() as usize;
-        let (data, header) = parse_header(data);
+        let (data, header) = parse_header(data)?;
         let (data, kbh) = parse_key_block_header(data, &header)?;
         let (data, sizes) =
             parse_key_block_info(data, kbh.key_block_info_len, &header, kbh.block_num)?;

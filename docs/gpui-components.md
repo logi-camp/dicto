@@ -1002,3 +1002,97 @@ fn domain_apex(domain: &str) -> String {
 **Rule:** Never use `.splitn(2, '.').nth(1)` alone — it produces `"com"` from `"google.com"`. Always guard with a dot-count check.
 
 Wildcard chips: `*.{apex}`. The `DomainWildcard` variant in the rule stores just the apex (without the `*.` prefix), and the policy-engine's `wildcard_matches` prepends `*.` when matching.
+
+---
+
+## New Patterns & Gotchas (from download feature)
+
+### `open_dialog` Cannot Be Called Before Root Renders
+
+`window.open_dialog()` requires `Root` to have rendered at least once (Root
+registers the dialog layer). Calling it inside `open_window`'s closure panics:
+
+```
+BUG: window first layer should be a gpui_component::Root
+```
+
+**Wrong:**
+```rust
+cx.open_window(..., |window, cx| {
+    let view = cx.new(|cx| MyView::new(...));
+    let root = cx.new(|cx| Root::new(view, window, cx));
+    window.open_dialog(cx, ...);  // PANIC: Root not rendered yet
+    root
+});
+```
+
+**Correct — defer to first render:**
+```rust
+// In Render impl:
+fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    if self.should_show_dialog {
+        self.should_show_dialog = false;  // Clear BEFORE opening
+        window.open_dialog(cx, move |dialog, _, _| {
+            dialog.title("Welcome")...
+        });
+    }
+    // ... rest of render
+}
+```
+
+The flag-clear-before-open pattern prevents re-opening on subsequent renders.
+
+### Text Ellipsis (Truncation with `…`)
+
+Use `.text_ellipsis()` from the `Styled` trait to truncate overflowing text:
+
+```rust
+div()
+    .w(px(200.))
+    .overflow_hidden()
+    .whitespace_nowrap()
+    .text_ellipsis()
+    .child("A very long description that will be truncated with an ellipsis...")
+```
+
+GPUI also has `.text_ellipsis_start()` (truncates from the left) and
+`.text_ellipsis_middle()` (truncates in the middle).
+
+### Progress Component Scale
+
+The `Progress` component from `gpui-component` takes values on a **0–100** scale,
+not 0.0–1.0:
+
+```rust
+// WRONG — shows nearly empty
+Progress::new("id").value(0.5)
+
+// CORRECT — shows 50%
+Progress::new("id").value(50.0)
+```
+
+### Fixed Dialog Height Prevents Tab-Switch Resize
+
+Using `.max_h(px(600.))` causes the dialog to shrink/grow when switching tabs
+(content height changes). Use a fixed `.h(px(N))` instead:
+
+```rust
+dialog
+    .w_full()
+    .h(px(560.))     // Fixed height — stable across tabs
+    // .max_h(...)    // Avoid this for tabbed dialogs
+```
+
+### `.footer()` Takes an Element, Not a Closure
+
+Unlike older versions, `.footer()` takes `impl IntoElement`:
+
+```rust
+dialog.footer(
+    h_flex().justify_end().gap(px(8.))
+        .child(cancel_button)
+        .child(save_button)
+)
+```
+
+Do NOT also call `.confirm()` — they conflict.

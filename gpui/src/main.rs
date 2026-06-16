@@ -2,8 +2,10 @@
 
 mod app;
 mod audio;
+mod catalog;
 mod colors;
 mod components;
+mod download;
 mod html;
 mod indexing;
 mod state;

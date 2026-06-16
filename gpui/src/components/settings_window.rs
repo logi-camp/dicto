@@ -28,7 +28,8 @@ pub fn header_tabs_for_dialog(
                     });
                 })
                 .child(Tab::new().label("Dictionaries"))
-                .child(Tab::new().label("Import")),
+                .child(Tab::new().label("Import"))
+                .child(Tab::new().label("Download")),
         )
         .into_any_element()
 }

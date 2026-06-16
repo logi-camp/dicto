@@ -23,3 +23,15 @@ pub fn text_secondary() -> Hsla {
 pub fn border() -> Hsla {
     gpui::rgb(0x292e42).into()
 }
+
+pub fn success() -> Hsla {
+    gpui::rgb(0x50c878).into()
+}
+
+pub fn error() -> Hsla {
+    gpui::rgb(0xe05050).into()
+}
+
+pub fn update() -> Hsla {
+    gpui::rgb(0xe09050).into()
+}

@@ -4,11 +4,11 @@ use gpui::{
     AppContext as _, Context, Entity, FontWeight, InteractiveElement, IntoElement, KeyDownEvent,
     ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Window, div, px,
 };
-use gpui_component::{Root, TitleBar, WindowExt, h_flex, input::InputState, v_flex};
+use gpui_component::{Root, TitleBar, WindowExt, h_flex, input::InputState, tab::{Tab, TabBar}, v_flex};
 
 use crate::colors;
 use crate::components::{
-    detail_panel, init_modal,
+    detail_panel,
     search_bar::{self, SearchBarProps},
     word_list::{self, WordListProps},
 };
@@ -186,6 +186,14 @@ impl DictApp {
 
 impl Render for DictApp {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // Open the init dialog on first render (after Root is initialized)
+        if self.state.read(cx).show_init_modal {
+            cx.update_entity(&self.state, |s, _| {
+                s.show_init_modal = false;
+            });
+            open_get_dictionaries_dialog(self.state.clone(), window, cx);
+        }
+
         // Root keeps active dialogs in a list, but doesn't render them
         // automatically — we have to append the dialog layer as a
         // sibling of the main view ourselves.
@@ -253,7 +261,6 @@ impl Render for DictApp {
             }))
             .child(main)
             .children(dialog_layer)
-            .child(init_modal::overlay(self.state.clone(), window, cx))
             .into_any_element()
     }
 }
@@ -335,10 +342,10 @@ fn cog_button(state: Entity<DictState>) -> gpui::AnyElement {
                 dialog
                     .title(div().child("Settings"))
                     .w_full()
-                    .max_h(px(600.))
+                    .h(px(560.))
                     .close_button(true)
                     .overlay_closable(true)
-                    .content(move |content, _window, cx| {
+                    .content(move |content, window, cx| {
                         let active_tab = state.read(cx).settings_active_tab;
 
                         content.child(
@@ -353,6 +360,12 @@ fn cog_button(state: Entity<DictState>) -> gpui::AnyElement {
                                 .child(if active_tab == 0 {
                                     crate::components::settings_panel::panel_content(
                                         state.clone(),
+                                        cx,
+                                    )
+                                } else if active_tab == 2 {
+                                    crate::components::download_panel::panel_content(
+                                        state.clone(),
+                                        window,
                                         cx,
                                     )
                                 } else {
@@ -418,4 +431,77 @@ fn cog_button(state: Entity<DictState>) -> gpui::AnyElement {
             });
         })
         .into_any_element()
+}
+
+fn open_get_dictionaries_dialog(state: Entity<DictState>, window: &mut Window, cx: &mut Context<DictApp>) {
+    let s = state;
+    window.open_dialog(cx, move |dialog, _window, _cx| {
+        dialog
+            .title(div().child("Get Dictionaries"))
+            .w_full()
+            .h(px(560.))
+            .close_button(true)
+            .overlay_closable(false)
+            .content({
+                let s = s.clone();
+                move |content, window, cx| {
+                    let active_tab = s.read(cx).init_modal_tab;
+                    let is_importing = s.read(cx).import_files.iter().any(|f| {
+                        matches!(
+                            f.status,
+                            crate::state::ImportStatus::Copying | crate::state::ImportStatus::Indexing
+                        )
+                    });
+
+                    content.child(
+                        v_flex()
+                            .w_full()
+                            .gap(px(12.))
+                            .child(
+                                h_flex().w_full().child(
+                                    TabBar::new("init-modal-tabs")
+                                        .underline()
+                                        .selected_index(active_tab)
+                                        .cursor_pointer()
+                                        .on_click({
+                                            let ts = s.clone();
+                                            move |&ix, _window, cx| {
+                                                cx.update_entity(&ts, |s, cx| {
+                                                    s.init_modal_tab = ix;
+                                                    cx.notify();
+                                                });
+                                            }
+                                        })
+                                        .child(Tab::new().label("Download"))
+                                        .child(Tab::new().label("Import")),
+                                ),
+                            )
+                            .child(if active_tab == 0 {
+                                crate::components::download_panel::panel_content(s.clone(), window, cx)
+                            } else {
+                                crate::components::init_modal::import_tab_content(s.clone(), is_importing, cx)
+                            }),
+                    )
+                }
+            })
+            .footer(
+                h_flex().justify_end().child(
+                    div()
+                        .id("init-modal-done-btn")
+                        .px(px(14.))
+                        .py(px(7.))
+                        .rounded(px(6.))
+                        .text_size(px(13.))
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .text_color(colors::bg())
+                        .bg(colors::primary())
+                        .cursor_pointer()
+                        .hover(|s| s.opacity(0.85))
+                        .child("Done")
+                        .on_click(|_, window, cx| {
+                            window.close_dialog(cx);
+                        }),
+                ),
+            )
+    });
 }

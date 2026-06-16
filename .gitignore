@@ -25,3 +25,6 @@ tmp_*.png
 
 # Windows packaging (exclude icon files)
 *.exe
+
+# Linux Packaging
+/pkg

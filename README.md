@@ -12,6 +12,7 @@
 - **Instant search** — suggestions appear as you type, results load in milliseconds
 - **Faithful rendering** — full HTML output with per-dictionary CSS so each dict looks exactly as its author intended
 - **Multi-dictionary** — load as many MDX files as you like, enable/disable/reorder them without restarting
+- **Built-in dictionary download** — download dictionaries from within the app (Settings → Download tab, or on first launch)
 
 ## Installation
 
@@ -46,7 +47,9 @@ cargo build --release --package dicto
 
 ## Dictionary setup
 
-Drop your `.mdx` (and optional `.mdd`) files into:
+**Option 1 — Download from the app:** Open Settings (⚙) → Download tab, pick a dictionary, and click Download. WordNet 3.1 (English, 155k+ words) is included. Dictionaries are installed to `~/.config/dicto/dicts/<id>/` and indexed automatically.
+
+**Option 2 — Drop files manually:** Place `.mdx` (and optional `.mdd`) files into:
 
 ```text
 ~/.config/dicto/dicts/

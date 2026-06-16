@@ -1,144 +1,18 @@
 use std::path::PathBuf;
 
 use gpui::{
-    AppContext as _, AsyncApp, Context, Entity, ExternalPaths, FontWeight, InteractiveElement,
+    AppContext as _, AsyncApp, Entity, ExternalPaths, FontWeight, InteractiveElement,
     IntoElement, ParentElement, PathPromptOptions, SharedString, StatefulInteractiveElement,
-    Styled, Window, div, px,
+    Styled, div, px,
 };
 use gpui_component::{h_flex, progress::Progress, scroll::ScrollableElement, v_flex};
 use mdict_rs::settings::DictEntry;
 use tracing::warn;
 
 use crate::{
-    app::DictApp,
     colors, indexing,
     state::{DictState, ImportFile, ImportStatus},
 };
-
-pub fn overlay(
-    state: Entity<DictState>,
-    _window: &mut Window,
-    cx: &mut Context<DictApp>,
-) -> gpui::AnyElement {
-    if !state.read(cx).show_init_modal {
-        return div().into_any_element();
-    }
-
-    let is_importing = state
-        .read(cx)
-        .import_files
-        .iter()
-        .any(|f| matches!(f.status, ImportStatus::Copying | ImportStatus::Indexing));
-
-    div()
-        .id("init-modal-backdrop")
-        .absolute()
-        .top_0()
-        .left_0()
-        .size_full()
-        .flex()
-        .items_center()
-        .justify_center()
-        .bg(gpui::Hsla {
-            h: 0.0,
-            s: 0.0,
-            l: 0.05,
-            a: 0.88,
-        })
-        .child(card(state, is_importing, cx))
-        .into_any_element()
-}
-
-fn card(
-    state: Entity<DictState>,
-    is_importing: bool,
-    cx: &mut Context<DictApp>,
-) -> gpui::AnyElement {
-    v_flex()
-        .id("init-modal-card")
-        .w(px(480.))
-        .h(px(520.))
-        .rounded(px(12.))
-        .bg(colors::surface())
-        .border_1()
-        .border_color(colors::border())
-        .overflow_hidden()
-        .child(header(state.clone(), is_importing, cx))
-        .child(
-            v_flex()
-                .flex_1()
-                .min_h(px(0.))
-                .w_full()
-                .px(px(24.))
-                .pb(px(24.))
-                .pt(px(16.))
-                .child(import_tab_content(state, is_importing, cx)),
-        )
-        .into_any_element()
-}
-
-fn header(
-    state: Entity<DictState>,
-    is_importing: bool,
-    cx: &mut Context<DictApp>,
-) -> gpui::AnyElement {
-    h_flex()
-        .w_full()
-        .px(px(24.))
-        .py(px(16.))
-        .items_center()
-        .justify_between()
-        .border_b_1()
-        .border_color(colors::border())
-        .child(
-            div()
-                .text_size(px(15.))
-                .font_weight(FontWeight::BOLD)
-                .text_color(colors::text())
-                .child("Import Dictionaries"),
-        )
-        .child(close_button(state, is_importing, cx))
-        .into_any_element()
-}
-
-fn close_button(
-    state: Entity<DictState>,
-    is_importing: bool,
-    cx: &mut Context<DictApp>,
-) -> gpui::AnyElement {
-    let has_success = state
-        .read(cx)
-        .import_files
-        .iter()
-        .any(|f| matches!(f.status, ImportStatus::Done));
-
-    if is_importing {
-        return div().into_any_element();
-    }
-
-    let label = if has_success { "Done" } else { "✕" };
-
-    div()
-        .id("init-modal-close")
-        .px(px(10.))
-        .py(px(4.))
-        .rounded(px(6.))
-        .text_size(px(12.))
-        .text_color(colors::text_secondary())
-        .border_1()
-        .border_color(colors::border())
-        .cursor_pointer()
-        .hover(|s| s.bg(colors::bg()).text_color(colors::text()))
-        .child(label)
-        .on_click(move |_, _, cx| {
-            cx.update_entity(&state, |s, cx| {
-                s.show_init_modal = false;
-                s.import_files.clear();
-                cx.notify();
-            });
-        })
-        .into_any_element()
-}
 
 /// The full import UI body (instructions + drop zone + divider + open-file button + file list).
 /// Shared between the first-run init modal and the Settings → Import tab.

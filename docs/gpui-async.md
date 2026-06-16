@@ -250,6 +250,108 @@ cx.spawn(async move |cx| {
 | Timer | `cx.background_executor().timer()` | `tokio::time::sleep()` |
 | Error propagation | Manual `match` or `?` | `?` operator in async |
 
+## HTTP / Network in GPUI
+
+**GPUI's async executor is NOT tokio.** Libraries that require a tokio runtime
+(like async `reqwest`, `tokio::fs`, etc.) will panic with
+`"there is no reactor running, must be called from the context of a Tokio 1.x runtime"`.
+
+**Solution: use `reqwest::blocking`** on the background executor thread pool:
+
+```rust
+// Cargo.toml: reqwest = { features = ["blocking", "rustls-tls"] }
+
+cx.spawn(async move |cx: &mut AsyncApp| {
+    let result = cx
+        .background_executor()
+        .spawn(async move {
+            // This runs on a regular thread pool, not tokio.
+            // reqwest::blocking::Client works here.
+            let client = reqwest::blocking::Client::builder()
+                .timeout(Duration::from_secs(30))
+                .build()?;
+            let resp = client.get(url).send()?;
+            let text = resp.text()?;
+            Ok::<_, anyhow::Error>(text)
+        })
+        .await;
+
+    // Back in GPUI async context — update UI
+    cx.update(|cx| {
+        cx.update_entity(&state, |s, cx| {
+            // process result
+            cx.notify();
+        });
+    });
+})
+.detach();
+```
+
+**Do NOT:**
+- Use `reqwest` (async) — no tokio runtime available
+- Use `tokio::fs` — same reason
+- Run blocking network calls directly in `cx.spawn()` — freezes the UI
+
+**Do:**
+- Use `reqwest::blocking` inside `cx.background_executor().spawn()`
+- Use `std::fs` (already blocking, runs fine on background executor)
+- Use `std::io::Read` / `std::io::Write` for streaming I/O
+
+## Shared Progress Pattern (Arc<Mutex<>>)
+
+For long-running background tasks (file downloads, heavy indexing) that need
+to report progress to the UI, use a shared `Arc<Mutex<Progress>>`:
+
+```rust
+use std::sync::{Arc, Mutex};
+
+#[derive(Clone)]
+struct DownloadProgress {
+    bytes_downloaded: u64,
+    total_bytes: u64,
+    speed: u64,
+}
+
+let progress = Arc::new(Mutex::new(DownloadProgress { ... }));
+
+// Background task writes progress
+let bg_progress = progress.clone();
+cx.background_executor().spawn(async move {
+    loop {
+        // ... read bytes ...
+        if let Ok(mut p) = bg_progress.lock() {
+            p.bytes_downloaded = downloaded;
+        }
+    }
+}).detach();
+
+// UI task polls progress every 200ms
+let poll_progress = progress.clone();
+cx.spawn(async move |cx| {
+    loop {
+        if let Ok(p) = poll_progress.lock() {
+            cx.update(|cx| {
+                cx.update_entity(&state, |s, cx| {
+                    s.progress = p.bytes_downloaded as f32 / p.total_bytes as f32;
+                    cx.notify();
+                });
+            });
+        }
+        cx.background_executor()
+            .timer(Duration::from_millis(200))
+            .await;
+    }
+}).detach();
+```
+
+**Why not callbacks?** The background executor's `spawn()` takes `Send + 'static`
+closures. GPUI entity references (`Entity<T>`) are not `Send`. So the background
+task can't call `cx.update_entity()` directly. The `Arc<Mutex<>>` bridge is the
+standard pattern for this.
+
+**Cleanup:** Drop the timer task handle to stop polling when the background
+task completes.
+
 ## Common Mistakes
 
 ### Forgetting `.detach()`
