@@ -33,7 +33,7 @@ const WINDOW_CLOSE_SVG: &[u8] = br##"<svg width="24" height="24" viewBox="0 0 24
 const WINDOW_MAXIMIZE_SVG: &[u8] = br##"<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path fill="#000" d="M5 5h14v14H5zm2 2v10h10V7z"/></svg>"##;
 const WINDOW_MINIMIZE_SVG: &[u8] = br##"<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path fill="#000" d="M5 11h14v2H5z"/></svg>"##;
 const WINDOW_RESTORE_SVG: &[u8] = br##"<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path fill="#000" d="M8 5h11v11h-2V7H8z"/><path fill="#000" d="M5 8h11v11H5zm2 2v7h7v-7z"/></svg>"##;
-
+const APP_ICON_SVG: &[u8] = br##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><defs><linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#7aa2f7"/><stop offset="100%" stop-color="#414868"/></linearGradient><linearGradient id="card" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" stop-color="#fafbff"/><stop offset="100%" stop-color="#dde3ff"/></linearGradient></defs><rect width="128" height="128" rx="28" fill="url(#bg)"/><rect x="34" y="16" width="68" height="84" rx="6" fill="#7aa2f7" opacity=".35"/><rect x="30" y="20" width="70" height="84" rx="6" fill="#7aa2f7" opacity=".55"/><rect x="26" y="24" width="72" height="84" rx="6" fill="url(#card)"/><path d="M 38 84 L 52 38 L 62 38 L 76 84 L 67 84 L 64 72 L 50 72 L 47 84 Z M 52 64 L 62 64 L 57 48 Z" fill="#1a1b26" fill-rule="evenodd"/><line x1="38" y1="94" x2="86" y2="94" stroke="#7aa2f7" stroke-width="3" stroke-linecap="round"/><line x1="38" y1="102" x2="70" y2="102" stroke="#7aa2f7" stroke-width="3" stroke-linecap="round" opacity=".55"/></svg>"##;
 impl AssetSource for AppAssets {
     fn load(&self, path: &str) -> gpui::Result<Option<Cow<'static, [u8]>>> {
         let local = match path {
@@ -41,6 +41,7 @@ impl AssetSource for AppAssets {
             "icons/window-maximize.svg" => Some(WINDOW_MAXIMIZE_SVG),
             "icons/window-minimize.svg" => Some(WINDOW_MINIMIZE_SVG),
             "icons/window-restore.svg" => Some(WINDOW_RESTORE_SVG),
+            "icons/app-icon.svg" => Some(APP_ICON_SVG),
             _ => None,
         };
 
@@ -58,6 +59,7 @@ impl AssetSource for AppAssets {
             "icons/window-maximize.svg",
             "icons/window-minimize.svg",
             "icons/window-restore.svg",
+            "icons/app-icon.svg",
         ] {
             if extra.starts_with(path) && !assets.iter().any(|item| item.as_ref() == extra) {
                 assets.push(extra.into());

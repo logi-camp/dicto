@@ -257,6 +257,8 @@ impl Render for DictApp {
                     cx.update_entity(&input_handle, |input, cx| {
                         input.set_value("", window, cx);
                     });
+                } else if key == "f1" {
+                    open_about_dialog(window, cx);
                 }
             }))
             .child(main)
@@ -360,7 +362,6 @@ fn cog_button(state: Entity<DictState>) -> gpui::AnyElement {
                                 .child(if active_tab == 0 {
                                     crate::components::settings_panel::dictionaries_tab_content(
                                         state.clone(),
-                                        window,
                                         cx,
                                     )
                                 } else if active_tab == 2 {
@@ -369,6 +370,8 @@ fn cog_button(state: Entity<DictState>) -> gpui::AnyElement {
                                         window,
                                         cx,
                                     )
+                                } else if active_tab == 3 {
+                                    crate::components::about_panel::panel_content()
                                 } else {
                                     let is_importing =
                                         state.read(cx).import_files.iter().any(|f| {
@@ -456,6 +459,39 @@ fn open_get_dictionaries_dialog(state: Entity<DictState>, window: &mut Window, c
                         .cursor_pointer()
                         .hover(|s| s.opacity(0.85))
                         .child("Done")
+                        .on_click(|_, window, cx| {
+                            window.close_dialog(cx);
+                        }),
+                ),
+            )
+    });
+}
+
+fn open_about_dialog(window: &mut Window, cx: &mut Context<DictApp>) {
+    window.open_dialog(cx, move |dialog, _window, _cx| {
+        dialog
+            .title(div().child("About"))
+            .w_full()
+            .h(px(560.))
+            .close_button(true)
+            .overlay_closable(true)
+            .content(move |content, _window, _cx| {
+                content.child(crate::components::about_panel::panel_content())
+            })
+            .footer(
+                h_flex().justify_end().child(
+                    div()
+                        .id("about-close-btn")
+                        .px(px(14.))
+                        .py(px(7.))
+                        .rounded(px(6.))
+                        .text_size(px(13.))
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .text_color(colors::bg())
+                        .bg(colors::primary())
+                        .cursor_pointer()
+                        .hover(|s| s.opacity(0.85))
+                        .child("Close")
                         .on_click(|_, window, cx| {
                             window.close_dialog(cx);
                         }),

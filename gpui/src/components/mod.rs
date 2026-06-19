@@ -1,3 +1,4 @@
+pub mod about_panel;
 pub mod detail_panel;
 pub mod download_panel;
 pub mod init_modal;

@@ -12,7 +12,6 @@ use crate::{colors, state::DictState};
 /// Build the dictionary list UI using the Table component.
 pub fn dictionaries_tab_content(
     state: Entity<DictState>,
-    window: &mut Window,
     cx: &mut gpui::App,
 ) -> gpui::AnyElement {
     let snapshot = state.read(cx).dictionaries.clone();
