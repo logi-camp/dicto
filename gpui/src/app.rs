@@ -476,7 +476,12 @@ fn open_about_dialog(window: &mut Window, cx: &mut Context<DictApp>) {
             .close_button(true)
             .overlay_closable(true)
             .content(move |content, _window, _cx| {
-                content.child(crate::components::about_panel::panel_content())
+                content.child(
+                    v_flex()
+                        .w_full()
+                        .h_full()
+                        .child(crate::components::about_panel::panel_content()),
+                )
             })
             .footer(
                 h_flex().justify_end().child(

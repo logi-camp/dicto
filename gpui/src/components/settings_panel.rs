@@ -1,7 +1,7 @@
 use gpui::prelude::FluentBuilder;
 use gpui::{
     AppContext as _, Entity, FontWeight, InteractiveElement, IntoElement, ParentElement,
-    SharedString, StatefulInteractiveElement, Styled, Window, div, px,
+    SharedString, StatefulInteractiveElement, Styled, div, px,
 };
 use gpui_component::{Sizable, WindowExt, h_flex, input::Input, scroll::ScrollableElement, v_flex};
 use mdict_rs::settings::DictEntry;
