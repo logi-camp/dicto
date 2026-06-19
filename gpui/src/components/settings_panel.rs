@@ -1,7 +1,7 @@
 use gpui::prelude::FluentBuilder;
 use gpui::{
     AppContext as _, Entity, FontWeight, InteractiveElement, IntoElement, ParentElement,
-    SharedString, StatefulInteractiveElement, Styled, div, px,
+    SharedString, StatefulInteractiveElement, Styled, Window, div, px,
 };
 use gpui_component::{Sizable, WindowExt, h_flex, input::Input, scroll::ScrollableElement, v_flex};
 use mdict_rs::settings::DictEntry;
@@ -10,7 +10,11 @@ use tracing::{info, warn};
 use crate::{colors, state::DictState};
 
 /// Build the dictionary list UI using the Table component.
-pub fn panel_content(state: Entity<DictState>, cx: &mut gpui::App) -> gpui::AnyElement {
+pub fn dictionaries_tab_content(
+    state: Entity<DictState>,
+    window: &mut Window,
+    cx: &mut gpui::App,
+) -> gpui::AnyElement {
     let snapshot = state.read(cx).dictionaries.clone();
 
     let header_text = div()
@@ -40,15 +44,18 @@ pub fn panel_content(state: Entity<DictState>, cx: &mut gpui::App) -> gpui::AnyE
         }
     }
 
+    let save_state = state.clone();
+
     v_flex()
         .w_full()
+        .flex_1()
         .gap(px(10.))
         .child(header_text)
         .child(
             v_flex()
                 .id("settings-dict-list")
                 .w_full()
-                .h(px(380.))
+                .flex_1()
                 .overflow_y_scrollbar()
                 .child(
                     v_flex()
@@ -56,6 +63,46 @@ pub fn panel_content(state: Entity<DictState>, cx: &mut gpui::App) -> gpui::AnyE
                         .gap(px(1.))
                         .child(dict_header_row())
                         .children(rows),
+                ),
+        )
+        .child(
+            h_flex()
+                .justify_end()
+                .gap(px(8.))
+                .child(
+                    div()
+                        .id("settings-cancel-btn")
+                        .px(px(14.))
+                        .py(px(7.))
+                        .rounded(px(6.))
+                        .text_size(px(13.))
+                        .text_color(colors::text_secondary())
+                        .border_1()
+                        .border_color(colors::border())
+                        .cursor_pointer()
+                        .hover(|s| s.bg(colors::bg()))
+                        .child("Cancel")
+                        .on_click(|_, window, cx| {
+                            window.close_dialog(cx);
+                        }),
+                )
+                .child(
+                    div()
+                        .id("settings-save-btn")
+                        .px(px(14.))
+                        .py(px(7.))
+                        .rounded(px(6.))
+                        .text_size(px(13.))
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .text_color(colors::bg())
+                        .bg(colors::primary())
+                        .cursor_pointer()
+                        .hover(|s| s.opacity(0.85))
+                        .child("Save")
+                        .on_click(move |_, window, cx| {
+                            apply_save(&save_state, cx);
+                            window.close_dialog(cx);
+                        }),
                 ),
         )
         .into_any_element()

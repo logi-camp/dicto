@@ -337,7 +337,6 @@ fn cog_button(state: Entity<DictState>) -> gpui::AnyElement {
 
             window.open_dialog(cx, move |dialog, _window, _cx| {
                 let state = state.clone();
-                let footer_state = state.clone();
 
                 dialog
                     .title(div().child("Settings"))
@@ -351,6 +350,7 @@ fn cog_button(state: Entity<DictState>) -> gpui::AnyElement {
                         content.child(
                             v_flex()
                                 .w_full()
+                                .h_full()
                                 .gap(px(12.))
                                 .child(crate::components::settings_window::header_tabs_for_dialog(
                                     state.clone(),
@@ -358,12 +358,13 @@ fn cog_button(state: Entity<DictState>) -> gpui::AnyElement {
                                     cx,
                                 ))
                                 .child(if active_tab == 0 {
-                                    crate::components::settings_panel::panel_content(
+                                    crate::components::settings_panel::dictionaries_tab_content(
                                         state.clone(),
+                                        window,
                                         cx,
                                     )
                                 } else if active_tab == 2 {
-                                    crate::components::download_panel::panel_content(
+                                    crate::components::download_panel::download_tab_content(
                                         state.clone(),
                                         window,
                                         cx,
@@ -385,49 +386,6 @@ fn cog_button(state: Entity<DictState>) -> gpui::AnyElement {
                                 }),
                         )
                     })
-                    .footer(
-                        h_flex()
-                            .justify_end()
-                            .gap(px(8.))
-                            .child(
-                                div()
-                                    .id("settings-cancel-btn")
-                                    .px(px(14.))
-                                    .py(px(7.))
-                                    .rounded(px(6.))
-                                    .text_size(px(13.))
-                                    .text_color(colors::text_secondary())
-                                    .border_1()
-                                    .border_color(colors::border())
-                                    .cursor_pointer()
-                                    .hover(|s| s.bg(colors::bg()))
-                                    .child("Cancel")
-                                    .on_click(|_, window, cx| {
-                                        window.close_dialog(cx);
-                                    }),
-                            )
-                            .child({
-                                div()
-                                    .id("settings-save-btn")
-                                    .px(px(14.))
-                                    .py(px(7.))
-                                    .rounded(px(6.))
-                                    .text_size(px(13.))
-                                    .font_weight(FontWeight::SEMIBOLD)
-                                    .text_color(colors::bg())
-                                    .bg(colors::primary())
-                                    .cursor_pointer()
-                                    .hover(|s| s.opacity(0.85))
-                                    .child("Save")
-                                    .on_click(move |_, window, cx| {
-                                        crate::components::settings_panel::apply_save(
-                                            &footer_state,
-                                            cx,
-                                        );
-                                        window.close_dialog(cx);
-                                    })
-                            }),
-                    )
             });
         })
         .into_any_element()
@@ -477,7 +435,7 @@ fn open_get_dictionaries_dialog(state: Entity<DictState>, window: &mut Window, c
                                 ),
                             )
                             .child(if active_tab == 0 {
-                                crate::components::download_panel::panel_content(s.clone(), window, cx)
+                                crate::components::download_panel::download_tab_content(s.clone(), window, cx)
                             } else {
                                 crate::components::init_modal::import_tab_content(s.clone(), is_importing, cx)
                             }),

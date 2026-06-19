@@ -11,7 +11,7 @@ use crate::{
     state::{CatalogState, DictDownloadStatus, DictState},
 };
 
-pub fn panel_content(
+pub fn download_tab_content(
     state: Entity<DictState>,
     _window: &mut Window,
     cx: &mut gpui::App,
