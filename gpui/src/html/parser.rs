@@ -545,7 +545,15 @@ fn apply_decls(decls: &HashMap<String, String>, style: &mut Style) {
                     if let Some(px) = parse_css_length(parts.last().unwrap(), 14.0) {
                         style.margin_bottom_px = px;
                     }
-                    if parts.len() >= 4 {
+                    if parts.len() == 2 {
+                        if let Some(px) = parse_css_length(parts[1], 14.0) {
+                            style.margin_right_px = px;
+                            style.margin_left_px = px;
+                        }
+                    } else if parts.len() >= 4 {
+                        if let Some(px) = parse_css_length(parts[1], 14.0) {
+                            style.margin_right_px = px;
+                        }
                         if let Some(px) = parse_css_length(parts[3], 14.0) {
                             style.margin_left_px = px;
                         }

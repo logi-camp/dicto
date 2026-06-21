@@ -400,6 +400,9 @@ fn styled_span(
         if style.padding_bottom_px > 0.0 {
             el = el.pb(px(style.padding_bottom_px));
         }
+        if style.margin_left_px > 0.0 {
+            el = el.ml(px(style.margin_left_px));
+        }
         if style.margin_right_px > 0.0 {
             el = el.mr(px(style.margin_right_px));
         }
