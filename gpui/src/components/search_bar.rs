@@ -34,7 +34,7 @@ pub fn search_bar(
         .bg(colors::bg())
         .border_b_1()
         .border_color(colors::border())
-        .child(h_flex().flex_1().child(input_el));
+        .child(h_flex().flex_1().w_full().child(input_el));
 
     if let Some(extra) = props.right_slot {
         row = row.child(extra);
