@@ -65,16 +65,14 @@ jobs:
 
       - name: Move installer to repo root (for artifact upload)
         shell: bash
-        run: |
-          mkdir -p Output
-          mv packaging/windows/Output/*.exe Output/
+        run: mv packaging/windows/Output/*.exe .
 
       - uses: actions/upload-artifact@v4
         with:
           name: dicto-windows
           path: |
             dicto-*-windows-x86_64-portable.zip
-            Output/*.exe
+            dicto-*-windows-x86_64-installer.exe
 
   release:
     needs: [build, build-windows]
