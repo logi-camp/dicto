@@ -63,6 +63,12 @@ jobs:
       - name: Create Inno Setup installer
         run: iscc packaging\windows\installer.iss /DAppVersion=${{ github.ref_name }}
 
+      - name: Move installer to repo root (for artifact upload)
+        shell: bash
+        run: |
+          mkdir -p Output
+          mv packaging/windows/Output/*.exe Output/
+
       - uses: actions/upload-artifact@v4
         with:
           name: dicto-windows
