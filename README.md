@@ -2,7 +2,7 @@
 
 <h1 align="center">Dicto</h1>
 
-<p align="center">A fast, offline desktop dictionary for Linux built in Rust. Reads MDX/MDD dictionary files — the same format used by GoldenDict, MDict, and most popular dictionary packs.</p>
+<p align="center">A fast, offline desktop dictionary for Windows and Linux built in Rust. Reads MDX/MDD dictionary files — the same format used by GoldenDict, MDict, and most popular dictionary packs.</p>
 
 ![screenshot](screenshot.png)
 
@@ -15,6 +15,16 @@
 - **Built-in dictionary download** — download dictionaries from within the app (Settings → Download tab, or on first launch)
 
 ## Installation
+
+### Linux
+
+[Download](https://github.com/logi-camp/dicto/releases/latest) — look for:
+
+| File | Description |
+| ---- | ----------- |
+| `dicto-*-x86_64-unknown-linux-gnu.tar.gz` | Generic Linux binary |
+
+Extract the archive and run the binary.
 
 ### Arch Linux (AUR)
 
@@ -35,6 +45,17 @@ git clone https://aur.archlinux.org/dicto.git
 cd dicto
 makepkg -si
 ```
+
+### Windows
+
+[Download](https://github.com/logi-camp/dicto/releases/latest) — look for:
+
+| File | Description |
+| ---- | ----------- |
+| `dicto-*-windows-x86_64-installer.exe` | Installer |
+| `dicto-*-windows-x86_64-portable.zip` | Portable (no install needed) |
+
+Requires [Visual C++ Redistributable (VC_redist.x64.exe)](https://aka.ms/vs/17/release/vc_redist.x64.exe)
 
 ### From source
 
