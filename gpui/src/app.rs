@@ -187,9 +187,9 @@ impl DictApp {
 impl Render for DictApp {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         // Open the init dialog on first render (after Root is initialized)
-        if self.state.read(cx).show_init_modal {
+        if self.state.read(cx).show_import_modal {
             cx.update_entity(&self.state, |s, _| {
-                s.show_init_modal = false;
+                s.show_import_modal = false;
             });
             open_get_dictionaries_dialog(self.state.clone(), window, cx);
         }
@@ -381,7 +381,7 @@ fn cog_button(state: Entity<DictState>) -> gpui::AnyElement {
                                                     | crate::state::ImportStatus::Indexing
                                             )
                                         });
-                                    crate::components::init_modal::import_tab_content(
+                                    crate::components::import_panel::import_panel_content(
                                         state.clone(),
                                         is_importing,
                                         cx,
@@ -406,7 +406,7 @@ fn open_get_dictionaries_dialog(state: Entity<DictState>, window: &mut Window, c
             .content({
                 let s = s.clone();
                 move |content, window, cx| {
-                    let active_tab = s.read(cx).init_modal_tab;
+                    let active_tab = s.read(cx).import_modal_tab;
                     let is_importing = s.read(cx).import_files.iter().any(|f| {
                         matches!(
                             f.status,
@@ -420,7 +420,7 @@ fn open_get_dictionaries_dialog(state: Entity<DictState>, window: &mut Window, c
                             .gap(px(12.))
                             .child(
                                 h_flex().w_full().child(
-                                    TabBar::new("init-modal-tabs")
+                                    TabBar::new("import-modal-tabs")
                                         .underline()
                                         .selected_index(active_tab)
                                         .cursor_pointer()
@@ -428,7 +428,7 @@ fn open_get_dictionaries_dialog(state: Entity<DictState>, window: &mut Window, c
                                             let ts = s.clone();
                                             move |&ix, _window, cx| {
                                                 cx.update_entity(&ts, |s, cx| {
-                                                    s.init_modal_tab = ix;
+                                                    s.import_modal_tab = ix;
                                                     cx.notify();
                                                 });
                                             }
@@ -440,7 +440,7 @@ fn open_get_dictionaries_dialog(state: Entity<DictState>, window: &mut Window, c
                             .child(if active_tab == 0 {
                                 crate::components::download_panel::download_tab_content(s.clone(), window, cx)
                             } else {
-                                crate::components::init_modal::import_tab_content(s.clone(), is_importing, cx)
+                                crate::components::import_panel::import_panel_content(s.clone(), is_importing, cx)
                             }),
                     )
                 }
@@ -448,7 +448,7 @@ fn open_get_dictionaries_dialog(state: Entity<DictState>, window: &mut Window, c
             .footer(
                 h_flex().justify_end().child(
                     div()
-                        .id("init-modal-done-btn")
+                        .id("import-modal-done-btn")
                         .px(px(14.))
                         .py(px(7.))
                         .rounded(px(6.))

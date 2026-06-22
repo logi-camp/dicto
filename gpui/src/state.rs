@@ -74,7 +74,7 @@ pub struct DictState {
     pub indexing_current: Option<String>,
 
     /// True when the dicts directory was empty at startup — shows import modal.
-    pub show_init_modal: bool,
+    pub show_import_modal: bool,
     /// Files being imported via the init/settings modal.
     pub import_files: Vec<ImportFile>,
 
@@ -84,7 +84,7 @@ pub struct DictState {
     pub catalog: CatalogState,
     pub download_status: DictDownloadStatus,
     pub download_active_id: Option<String>,
-    pub init_modal_tab: usize,
+    pub import_modal_tab: usize,
 }
 
 impl DictState {
@@ -101,13 +101,13 @@ impl DictState {
             indexing_total: 0,
             indexing_done: 0,
             indexing_current: None,
-            show_init_modal: mdict_rs::config::discover_mdx_files().is_empty(),
+            show_import_modal: mdict_rs::config::discover_mdx_files().is_empty(),
             import_files: Vec::new(),
             settings_active_tab: 0,
             catalog: CatalogState::Idle,
             download_status: DictDownloadStatus::Idle,
             download_active_id: None,
-            init_modal_tab: 0,
+            import_modal_tab: 0,
         }
     }
 }

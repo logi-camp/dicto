@@ -16,7 +16,7 @@ use crate::{
 
 /// The full import UI body (instructions + drop zone + divider + open-file button + file list).
 /// Shared between the first-run init modal and the Settings → Import tab.
-pub fn import_tab_content(
+pub fn import_panel_content(
     state: Entity<DictState>,
     is_importing: bool,
     cx: &mut gpui::App,
@@ -528,7 +528,7 @@ pub fn start_import(paths: Vec<PathBuf>, state: Entity<DictState>, cx: &mut gpui
                             short_name: String::new(),
                         });
                         if let Err(e) = mdict_rs::settings::update(settings) {
-                            warn!("init_modal: failed to update settings for {dest_str}: {e}");
+                            warn!("import_panel: failed to update settings for {dest_str}: {e}");
                         }
                     }
                     mdict_rs::config::reset_pools();
@@ -546,7 +546,7 @@ pub fn start_import(paths: Vec<PathBuf>, state: Entity<DictState>, cx: &mut gpui
                     .await;
 
                 if let Err(e) = index_result {
-                    warn!("init_modal: index failed: {e}");
+                    warn!("import_panel: index failed: {e}");
                     cx.update(|cx| {
                         cx.update_entity(&state, |s, cx| {
                             if let Some(f) = s.import_files.get_mut(idx) {
