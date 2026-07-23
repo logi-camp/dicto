@@ -19,6 +19,27 @@ use crate::config::{APP_NAME, discover_mdx_files};
 pub struct Settings {
     #[serde(default)]
     pub dictionaries: Vec<DictEntry>,
+    /// Telemetry opt-in state. Stored here so it persists in settings.toml
+    /// without coupling this crate to any analytics dependency.
+    #[serde(default)]
+    pub telemetry_consent: TelemetryConsent,
+    /// Anonymous installation id (UUID v4), generated once on first launch.
+    /// Local-only; identifies an installation, never a person.
+    #[serde(default)]
+    pub installation_id: Option<String>,
+}
+
+/// Three-state telemetry consent, persisted in settings.toml.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum TelemetryConsent {
+    /// Never shown the consent prompt yet → app shows it on launch.
+    #[default]
+    Undecided,
+    /// User opted in → anonymous usage events are sent.
+    OptedIn,
+    /// User declined → nothing is sent, ever, until they re-enable.
+    OptedOut,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -102,6 +123,52 @@ pub fn update(new: Settings) -> anyhow::Result<()> {
     save(&cleaned)?;
     *SETTINGS.write().unwrap() = cleaned;
     Ok(())
+}
+
+/// Persist only the telemetry consent, preserving every other field.
+/// Returns the newly saved settings so the caller can re-init telemetry
+/// without a separate read.
+pub fn update_consent(consent: TelemetryConsent) -> anyhow::Result<Settings> {
+    let mut current = current();
+    current.telemetry_consent = consent;
+    // Bypass merge_with_disk — consent has nothing to do with the dict list,
+    // and merging could reorder/drop entries based on disk state.
+    save(&current)?;
+    *SETTINGS.write().unwrap() = current.clone();
+    Ok(current)
+}
+
+/// Generate + persist the installation id if none exists yet. Returns the id
+/// (newly generated or existing). Cheap to call every launch — it's a no-op
+/// once an id is present.
+pub fn ensure_installation_id() -> anyhow::Result<String> {
+    let mut current = current();
+    if let Some(id) = current.installation_id.clone() {
+        return Ok(id);
+    }
+    let id = format_uuid_v4();
+    current.installation_id = Some(id.clone());
+    save(&current)?;
+    *SETTINGS.write().unwrap() = current;
+    Ok(id)
+}
+
+/// Minimal RFC 4122 v4 UUID generator without an extra dependency: 16 random
+/// bytes with the v4 and variant bits set, formatted as 8-4-4-4-12.
+fn format_uuid_v4() -> String {
+    use rand::Rng;
+    let mut rng = rand::rng();
+    let mut bytes = [0u8; 16];
+    rng.fill(&mut bytes);
+    // Version 4
+    bytes[6] = (bytes[6] & 0x0F) | 0x40;
+    // Variant (RFC 4122)
+    bytes[8] = (bytes[8] & 0x3F) | 0x80;
+    let b = bytes;
+    format!(
+        "{:02x}{:02x}{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
+        b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7], b[8], b[9], b[10], b[11], b[12], b[13], b[14], b[15]
+    )
 }
 
 fn save(s: &Settings) -> anyhow::Result<()> {

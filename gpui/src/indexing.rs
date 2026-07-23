@@ -75,6 +75,10 @@ async fn run(state: Entity<DictState>, cx: &mut AsyncApp) {
 
         if let Err(e) = result {
             warn!("indexing failed for {path}: {e}");
+            dicto_telemetry::get().track(dicto_telemetry::Event::ErrorOccurred {
+                kind: dicto_telemetry::ErrorKind::Indexing,
+                message: format!("indexing failed: {e}"),
+            });
         }
 
         mdict_rs::registry::reload();

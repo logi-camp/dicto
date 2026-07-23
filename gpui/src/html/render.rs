@@ -489,6 +489,7 @@ fn sound_button(
     }
 
     btn.on_click(move |_, _, _cx| {
+        dicto_telemetry::get().track(dicto_telemetry::Event::PronunciationPlayed);
         audio::play_resource(path.as_ref());
     })
     .into_any_element()

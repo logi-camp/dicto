@@ -95,6 +95,8 @@ The workspace has two crates:
 - **`mdict-rs`** (library) — MDX/MDD parser, redb indexer, query pipeline, settings
 - **`dicto`** (binary) — GPUI desktop app
 
+- **`telemetry`** (library) — opt-in anonymous analytics. Off by default; never transmits what you search for or which dictionaries you import. See [docs/telemetry.md](docs/telemetry.md).
+
 ## References
 
 - [mdict-analysis](https://bitbucket.org/xwang/mdict-analysis) — MDX/MDD format specification

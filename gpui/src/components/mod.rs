@@ -1,4 +1,5 @@
 pub mod about_panel;
+pub mod consent_dialog;
 pub mod detail_panel;
 pub mod download_panel;
 pub mod import_panel;

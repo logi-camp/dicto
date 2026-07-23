@@ -100,6 +100,11 @@ impl DictApp {
 
                     if should_preview {
                         let word_for_result = word.clone();
+                        dicto_telemetry::get().track(
+                            dicto_telemetry::Event::LookupPerformed {
+                                source: dicto_telemetry::LookupSource::AutoPreview,
+                            },
+                        );
                         let results = cx
                             .background_executor()
                             .spawn(async move {
@@ -138,6 +143,28 @@ impl DictApp {
             input_state.focus(window, cx);
         });
 
+        // First-run telemetry consent: if the user hasn't decided yet (fresh
+        // install, or an upgrader whose pre-telemetry settings.toml defaulted
+        // the field to Undecided), surface a one-time consent dialog. The
+        // dialog records OptedIn / OptedOut; closing it (without choosing) is
+        // treated as OptedOut so it never nags.
+        //
+        // Deferred because `open_dialog` ultimately calls
+        // `gpui_component::Root::update`, which requires the window's root
+        // view to already be a `Root`. At construction time the root is the
+        // `DictApp` being built here — `Root::new(view, ...)` only becomes the
+        // window root *after* this constructor returns. `window.defer` runs
+        // the open at the end of the current effect cycle, by which point the
+        // root is committed.
+        if matches!(
+            mdict_rs::settings::current().telemetry_consent,
+            mdict_rs::settings::TelemetryConsent::Undecided
+        ) {
+            window.defer(cx, |window, cx| {
+                crate::components::consent_dialog::open_consent_dialog(window, cx);
+            });
+        }
+
         Self { state, input }
     }
 
@@ -145,6 +172,9 @@ impl DictApp {
         if word.is_empty() {
             return;
         }
+        dicto_telemetry::get().track(dicto_telemetry::Event::LookupPerformed {
+            source: dicto_telemetry::LookupSource::Keyboard,
+        });
 
         cx.update_entity(&self.state, |s, cx| {
             s.result_word = Some(word.clone());
@@ -206,6 +236,7 @@ impl Render for DictApp {
             .child(
                 TitleBar::new()
                     .on_close_window(|_, window, _| {
+                        dicto_telemetry::get().track(dicto_telemetry::Event::WindowClosed);
                         window.remove_window();
                     })
                     .child(
@@ -336,6 +367,9 @@ fn cog_button(state: Entity<DictState>) -> gpui::AnyElement {
         .child(SharedString::from("\u{2699} Settings"))
         .on_click(move |_, window, cx| {
             let state = state.clone();
+            dicto_telemetry::get().track(dicto_telemetry::Event::SettingsOpened {
+                source: dicto_telemetry::SettingsSource::GearButton,
+            });
 
             window.open_dialog(cx, move |dialog, _window, _cx| {
                 let state = state.clone();
@@ -364,6 +398,20 @@ fn cog_button(state: Entity<DictState>) -> gpui::AnyElement {
                                         state.clone(),
                                         cx,
                                     )
+                                } else if active_tab == 1 {
+                                    let is_importing =
+                                        state.read(cx).import_files.iter().any(|f| {
+                                            matches!(
+                                                f.status,
+                                                crate::state::ImportStatus::Copying
+                                                    | crate::state::ImportStatus::Indexing
+                                            )
+                                        });
+                                    crate::components::import_panel::import_panel_content(
+                                        state.clone(),
+                                        is_importing,
+                                        cx,
+                                    )
                                 } else if active_tab == 2 {
                                     crate::components::download_panel::download_tab_content(
                                         state.clone(),
@@ -371,6 +419,11 @@ fn cog_button(state: Entity<DictState>) -> gpui::AnyElement {
                                         cx,
                                     )
                                 } else if active_tab == 3 {
+                                    crate::components::settings_panel::telemetry_tab_content(
+                                        state.clone(),
+                                        cx,
+                                    )
+                                } else if active_tab == 4 {
                                     crate::components::about_panel::panel_content()
                                 } else {
                                     let is_importing =

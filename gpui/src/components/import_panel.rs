@@ -413,6 +413,8 @@ pub fn start_import(paths: Vec<PathBuf>, state: Entity<DictState>, cx: &mut gpui
     }
 
     cx.spawn(async move |cx: &mut AsyncApp| {
+        let import_started = std::time::Instant::now();
+        let mut total_bytes: u64 = 0;
         let mut stems: std::collections::HashMap<String, StemGroup> = std::collections::HashMap::new();
 
         for idx in valid_start..valid_end {
@@ -435,6 +437,10 @@ pub fn start_import(paths: Vec<PathBuf>, state: Entity<DictState>, cx: &mut gpui
             let stem_path = dicts_dir.join(&stem);
 
             if let Err(e) = std::fs::create_dir_all(&stem_path) {
+                dicto_telemetry::get().track(dicto_telemetry::Event::ErrorOccurred {
+                    kind: dicto_telemetry::ErrorKind::Import,
+                    message: format!("cannot create dict folder: {e}"),
+                });
                 for (idx, _) in &group.files {
                     cx.update(|cx| {
                         cx.update_entity(&state, |s, cx| {
@@ -461,16 +467,23 @@ pub fn start_import(paths: Vec<PathBuf>, state: Entity<DictState>, cx: &mut gpui
                     });
                 });
 
-                if let Err(e) = std::fs::copy(&src_path, &dest_path) {
-                    cx.update(|cx| {
-                        cx.update_entity(&state, |s, cx| {
-                            if let Some(f) = s.import_files.get_mut(idx) {
-                                f.status = ImportStatus::Error(format!("Copy failed: {e}"));
-                            }
-                            cx.notify();
+                match std::fs::copy(&src_path, &dest_path) {
+                    Ok(bytes) => total_bytes = total_bytes.saturating_add(bytes),
+                    Err(e) => {
+                        dicto_telemetry::get().track(dicto_telemetry::Event::ErrorOccurred {
+                            kind: dicto_telemetry::ErrorKind::Import,
+                            message: format!("copy failed: {e}"),
                         });
-                    });
-                    continue;
+                        cx.update(|cx| {
+                            cx.update_entity(&state, |s, cx| {
+                                if let Some(f) = s.import_files.get_mut(idx) {
+                                    f.status = ImportStatus::Error(format!("Copy failed: {e}"));
+                                }
+                                cx.notify();
+                            });
+                        });
+                        continue;
+                    }
                 }
 
                 let dest_str = dest_path.to_string_lossy().to_string();
@@ -547,6 +560,10 @@ pub fn start_import(paths: Vec<PathBuf>, state: Entity<DictState>, cx: &mut gpui
 
                 if let Err(e) = index_result {
                     warn!("import_panel: index failed: {e}");
+                    dicto_telemetry::get().track(dicto_telemetry::Event::ErrorOccurred {
+                        kind: dicto_telemetry::ErrorKind::Import,
+                        message: format!("index failed: {e}"),
+                    });
                     cx.update(|cx| {
                         cx.update_entity(&state, |s, cx| {
                             if let Some(f) = s.import_files.get_mut(idx) {
@@ -577,6 +594,19 @@ pub fn start_import(paths: Vec<PathBuf>, state: Entity<DictState>, cx: &mut gpui
                 s.dictionaries = mdict_rs::settings::current().dictionaries;
                 cx.notify();
             });
+        });
+
+        // Fire one aggregate event for the whole batch: the count of enabled
+        // dictionaries after the import, never the names/paths. Duration
+        // covers the whole batch (copy + index) from task start to here.
+        // Size is total bytes copied, rounded to the nearest MB — rounding
+        // breaks the precise size fingerprint while preserving perf signal.
+        let count = mdict_rs::settings::enabled_mdx().len();
+        let size_mb = (total_bytes + 500_000) / 1_000_000;
+        dicto_telemetry::get().track(dicto_telemetry::Event::DictionaryImported {
+            count,
+            duration_ms: import_started.elapsed().as_millis() as u64,
+            size_mb,
         });
     })
     .detach();

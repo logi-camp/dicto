@@ -23,6 +23,11 @@ pub fn play_resource(path: &str) {
             Some(b) => b,
             None => {
                 warn!("audio: resource not found: {path}");
+                dicto_telemetry::get().track(
+                    dicto_telemetry::Event::PronunciationPlaybackFailed {
+                        reason: dicto_telemetry::PlaybackFailureReason::ResourceNotFound,
+                    },
+                );
                 return;
             }
         };
@@ -67,6 +72,9 @@ fn play_file(cached: &Path, label: &str) {
             cached.display(),
             label
         );
+        dicto_telemetry::get().track(dicto_telemetry::Event::PronunciationPlaybackFailed {
+            reason: dicto_telemetry::PlaybackFailureReason::DecoderRejected,
+        });
     }
 }
 
@@ -77,6 +85,11 @@ fn try_play_buffer(bytes: &[u8]) -> bool {
         Ok(pair) => pair,
         Err(e) => {
             warn!("audio: no default output: {e}");
+            dicto_telemetry::get().track(
+                dicto_telemetry::Event::PronunciationPlaybackFailed {
+                    reason: dicto_telemetry::PlaybackFailureReason::NoDevice,
+                },
+            );
             return false;
         }
     };
@@ -84,12 +97,24 @@ fn try_play_buffer(bytes: &[u8]) -> bool {
         Ok(s) => s,
         Err(e) => {
             warn!("audio: sink failed: {e}");
+            dicto_telemetry::get().track(
+                dicto_telemetry::Event::PronunciationPlaybackFailed {
+                    reason: dicto_telemetry::PlaybackFailureReason::SinkFailed,
+                },
+            );
             return false;
         }
     };
     let decoder = match rodio::Decoder::new(Cursor::new(bytes.to_vec())) {
         Ok(d) => d,
-        Err(_) => return false,
+        Err(_) => {
+            dicto_telemetry::get().track(
+                dicto_telemetry::Event::PronunciationPlaybackFailed {
+                    reason: dicto_telemetry::PlaybackFailureReason::DecoderRejected,
+                },
+            );
+            return false;
+        }
     };
     sink.append(decoder);
     sink.sleep_until_end();
@@ -136,6 +161,11 @@ fn decode_via_ffmpeg(bytes: &[u8], out_path: &Path) -> bool {
     match result {
         Err(e) => {
             warn!("audio: ffmpeg not available ({e}); install ffmpeg to enable .spx playback");
+            dicto_telemetry::get().track(
+                dicto_telemetry::Event::PronunciationPlaybackFailed {
+                    reason: dicto_telemetry::PlaybackFailureReason::FfmpegMissing,
+                },
+            );
             false
         }
         Ok(output) if !output.status.success() => {
@@ -143,6 +173,11 @@ fn decode_via_ffmpeg(bytes: &[u8], out_path: &Path) -> bool {
                 "audio: ffmpeg failed ({}): {}",
                 output.status,
                 String::from_utf8_lossy(&output.stderr).trim()
+            );
+            dicto_telemetry::get().track(
+                dicto_telemetry::Event::PronunciationPlaybackFailed {
+                    reason: dicto_telemetry::PlaybackFailureReason::FfmpegFailed,
+                },
             );
             false
         }
