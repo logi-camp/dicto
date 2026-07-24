@@ -3,7 +3,7 @@ members = [".", "gpui", "telemetry"]
 
 [package]
 name = "mdict-rs"
-version = "0.1.4"
+version = "0.6.0"
 authors = ["Mohammadreza Khani"]
 edition = "2024"
 license = "AGPL-3.0-or-later"
