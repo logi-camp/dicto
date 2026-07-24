@@ -13,7 +13,7 @@ jobs:
       - name: Install dependencies
         run: |
           pacman -Syu --noconfirm
-          pacman -S --noconfirm base-devel git gtk3 alsa-lib libxkbcommon libxkbcommon-x11 xdotool clang pkgconf
+          pacman -S --noconfirm base-devel git gtk3 alsa-lib libxkbcommon libxkbcommon-x11 xdotool clang pkgconf upx
 
       - uses: actions/checkout@v4
 
@@ -21,6 +21,9 @@ jobs:
 
       - name: Build
         run: cargo build --release --package dicto
+
+      - name: Compress binary with UPX
+        run: upx --best --lzma target/release/dicto
 
       - name: Package release tarball
         run: |
@@ -49,8 +52,15 @@ jobs:
       - name: Install Inno Setup
         run: choco install innosetup -y
 
+      - name: Install UPX
+        run: choco install upx -y --no-progress
+
       - name: Build Windows executable (release)
         run: cargo build --release --package dicto
+
+      - name: Compress binary with UPX
+        shell: bash
+        run: upx --best --lzma target/release/dicto.exe
 
       - name: Create portable package
         run: |

@@ -10,8 +10,8 @@ mdict-rs = { path = ".." }
 dicto-telemetry = { path = "../telemetry" }
 gpui = { git = "https://github.com/zed-industries/zed", rev = "1d217ee39d381ac101b7cf49d3d22451ac1093fe" }
 gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "1d217ee39d381ac101b7cf49d3d22451ac1093fe" }
-gpui-component = { git = "https://github.com/longbridge/gpui-component" }
-gpui-component-assets = { git = "https://github.com/longbridge/gpui-component" }
+gpui-component = { git = "https://github.com/longbridge/gpui-component", rev = "c112e7b482b6b9c53a8c43deaf5847b94a29ad82" }
+gpui-component-assets = { git = "https://github.com/longbridge/gpui-component", rev = "c112e7b482b6b9c53a8c43deaf5847b94a29ad82" }
 anyhow = "1.0"
 tray-icon = "0.24.0"
 tracing = "0.1"
