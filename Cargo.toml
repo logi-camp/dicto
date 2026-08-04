@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "gpui", "telemetry"]
+members = [".", "gpui", "telemetry", "translate"]
 
 [package]
 name = "mdict-rs"

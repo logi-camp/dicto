@@ -6,26 +6,116 @@ mod catalog;
 mod colors;
 mod components;
 mod download;
+mod hotkey;
 mod html;
 mod indexing;
+mod playback;
+mod quick_translate;
+mod selection;
 mod state;
+mod tray;
+mod tts;
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::{borrow::Cow, time::Duration};
 
 use gpui::{
-    App, AppContext as _, AssetSource, Bounds, SharedString, WindowBounds, WindowDecorations,
-    WindowOptions, px, size,
+    App, AppContext as _, AssetSource, Bounds, QuitMode, SharedString, WindowBounds,
+    WindowDecorations, WindowOptions, px, size,
 };
 use gpui_component::{Root, Theme, ThemeMode};
 use gpui_platform::application;
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
-use tray_icon::{
-    Icon, TrayIconBuilder,
-    menu::{IsMenuItem, Menu, MenuEvent, MenuId, MenuItem},
-};
 
 use crate::app::DictApp;
 use crate::state::DictState;
+use crate::tray::{spawn_tray, TrayAction};
+
+/// Global flag set by the tray menu "Quick Translate" item.
+/// The main app loop polls this and triggers translation when set.
+static TRAY_TRANSLATE_TRIGGERED: AtomicBool = AtomicBool::new(false);
+
+/// The compositor-minted xdg-activation token captured by the tray (SNI
+/// `ProvideXdgActivationToken`) immediately before a "Quick Translate" click.
+/// Forwarded to the popup window's `activate_with_token` so GNOME/Mutter
+/// authoritatively raises it instead of falling back to demand-attention.
+/// Same pattern as LogiGuard (see apps/gpui/src/tray.rs).
+static TRAY_TRANSLATE_TOKEN: std::sync::OnceLock<std::sync::Mutex<Option<String>>> =
+    std::sync::OnceLock::new();
+
+fn tray_translate_token() -> &'static std::sync::Mutex<Option<String>> {
+    TRAY_TRANSLATE_TOKEN.get_or_init(|| std::sync::Mutex::new(None))
+}
+
+/// Stash the latest tray activation token for the next popup open.
+pub fn set_tray_translate_token(token: Option<String>) {
+    if let Ok(mut g) = tray_translate_token().lock() {
+        *g = token;
+    }
+}
+
+/// Drain the stashed tray activation token (returns it, leaving None behind).
+pub fn take_tray_translate_token() -> Option<String> {
+    tray_translate_token()
+        .lock()
+        .ok()
+        .and_then(|mut g| g.take())
+}
+
+/// Path to the IPC socket used by `dicto --translate` to signal a running
+/// instance. Lives in the user's runtime directory.
+fn ipc_socket_path() -> std::path::PathBuf {
+    let base = std::env::var("XDG_RUNTIME_DIR")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| std::path::PathBuf::from("/tmp"));
+    base.join("dicto-translate.sock")
+}
+
+/// Send a translate trigger to the running instance via the IPC socket.
+/// Returns an error if no instance is listening.
+fn send_translate_trigger() -> std::io::Result<()> {
+    use std::io::Write;
+    use std::os::unix::net::UnixStream;
+
+    let path = ipc_socket_path();
+    let mut stream = UnixStream::connect(&path)?;
+    stream.write_all(b"translate\n")?;
+    Ok(())
+}
+
+/// Spawn the IPC server that listens for `dicto --translate` triggers.
+/// Runs in a background thread; sets the global flag on each trigger.
+fn spawn_ipc_server() {
+    use std::os::unix::net::UnixListener;
+
+    let path = ipc_socket_path();
+    let _ = std::fs::remove_file(&path); // clear stale socket
+
+    let listener = match UnixListener::bind(&path) {
+        Ok(l) => {
+            tracing::info!("ipc: listening on {}", path.display());
+            l
+        }
+        Err(e) => {
+            tracing::warn!("ipc: failed to bind socket at {}: {e}", path.display());
+            return;
+        }
+    };
+
+    std::thread::Builder::new()
+        .name("dicto-ipc".into())
+        .spawn(move || {
+            use std::io::Read;
+            for stream in listener.incoming() {
+                let Ok(mut stream) = stream else { continue };
+                let mut buf = [0u8; 32];
+                if stream.read(&mut buf).unwrap_or(0) > 0 {
+                    TRAY_TRANSLATE_TRIGGERED.store(true, Ordering::Release);
+                }
+            }
+        })
+        .ok();
+}
 
 struct AppAssets;
 
@@ -70,6 +160,25 @@ impl AssetSource for AppAssets {
 }
 
 fn main() {
+    // Handle the `--translate` CLI flag FIRST, before any GUI init: a second
+    // invocation with this flag signals the already-running instance to
+    // trigger quick translate. This is the GNOME Wayland workaround for
+    // global hotkeys — the user binds a custom keyboard shortcut to
+    // `dicto --translate` in GNOME Settings → Keyboard → Custom Shortcuts.
+    if std::env::args().any(|a| a == "--translate" || a == "-t") {
+        match send_translate_trigger() {
+            Ok(()) => std::process::exit(0),
+            Err(e) => {
+                eprintln!(
+                    "dicto: could not reach a running instance.\n\
+                     Start Dicto first, then press the shortcut.\n\
+                     Error: {e}"
+                );
+                std::process::exit(1);
+            }
+        }
+    }
+
     #[cfg(target_os = "linux")]
     gtk::init().expect("failed to init GTK");
 
@@ -117,53 +226,68 @@ fn main() {
 
     let app = application();
     app.with_assets(AppAssets)
+        // The tray must survive closing the dictionary window. Default
+        // QuitMode quits the app when the last window closes, which would tear
+        // down the ksni tray. Quit only on the explicit "Quit" tray action.
+        .with_quit_mode(QuitMode::Explicit)
         .run(move |cx: &mut App| {
             gpui_component::init(cx);
             Theme::change(ThemeMode::Dark, None, cx);
 
-            setup_tray(cx);
+            // Start the IPC server so `dicto --translate` (e.g. from a GNOME
+            // custom keyboard shortcut) can trigger quick translate.
+            spawn_ipc_server();
+
+            // Spawn the ksni tray; poll its action channel from the main loop.
+            let (tray_rx, tray_token) = spawn_tray();
+            poll_tray_actions(cx, tray_rx, tray_token);
+
             open_dictionary_window(cx);
 
             cx.activate(true);
         });
 }
 
-fn setup_tray(cx: &mut App) {
-    let show_item = MenuItem::with_id(MenuId::new("show"), "Show Dictionary", true, None);
-    let quit_item = MenuItem::with_id(MenuId::new("quit"), "Quit", true, None);
-
-    let menu = Menu::new();
-    menu.append_items(&[&show_item as &dyn IsMenuItem, &quit_item as &dyn IsMenuItem])
-        .unwrap();
-
-    let icon = tray_pixel_icon();
-    let _tray = TrayIconBuilder::new()
-        .with_menu(Box::new(menu))
-        .with_tooltip("Dicto")
-        .with_icon(icon)
-        .build()
-        .unwrap();
-
+/// Poll the ksni tray action channel from a GPUI background task.
+///
+/// - `Show` → open (or re-activate) the dictionary window.
+/// - `QuickTranslate` → set the same flag the `dicto --translate` IPC path
+///   uses; the `app.rs` poll loop picks it up and runs `trigger_translate`.
+///   Also stashes the tray's xdg-activation token so the popup can raise+focus.
+/// - `Quit` → quit the app.
+fn poll_tray_actions(
+    cx: &mut App,
+    tray_rx: std::sync::mpsc::Receiver<TrayAction>,
+    tray_token: crate::tray::SharedToken,
+) {
     cx.spawn(async move |cx| {
         loop {
-            while let Ok(event) = MenuEvent::receiver().try_recv() {
-                match event.id.as_ref() {
-                    "show" => {
-                        cx.update(|cx| {
-                            open_dictionary_window(cx);
+            while let Ok(action) = tray_rx.try_recv() {
+                match action {
+                    TrayAction::Show => {
+                        let _ = cx.update(|cx| {
+                            if cx.windows().is_empty() {
+                                open_dictionary_window(cx);
+                            } else {
+                                cx.activate(true);
+                            }
                         });
                     }
-                    "quit" => {
-                        std::process::exit(0);
+                    TrayAction::QuickTranslate => {
+                        // Forward the compositor-minted activation token (if
+                        // the host supports ProvideXdgActivationToken) so the
+                        // popup raises+focuses on GNOME/Mutter. Then set the
+                        // trigger flag the DictApp poll loop drains.
+                        let token = tray_token
+                            .lock()
+                            .ok()
+                            .and_then(|mut g| g.take());
+                        set_tray_translate_token(token);
+                        TRAY_TRANSLATE_TRIGGERED.store(true, Ordering::Release);
                     }
-                    _ => {}
-                }
-            }
-
-            #[cfg(target_os = "linux")]
-            {
-                while gtk::events_pending() {
-                    gtk::main_iteration_do(false);
+                    TrayAction::Quit => {
+                        let _ = cx.update(|cx| cx.quit());
+                    }
                 }
             }
 
@@ -208,42 +332,4 @@ fn open_dictionary_window(cx: &mut App) {
     if let Some(state) = state_for_indexing.into_inner() {
         indexing::spawn(state, cx);
     }
-}
-
-fn tray_pixel_icon() -> Icon {
-    let sz: u32 = 64;
-    let mut rgba = vec![0u8; (sz * sz * 4) as usize];
-
-    let cx_f = sz as f32 / 2.0;
-    let cy_f = sz as f32 / 2.0;
-    let r = sz as f32 * 0.38;
-
-    for y in 0..sz {
-        for x in 0..sz {
-            let dx = x as f32 - cx_f;
-            let dy = y as f32 - cy_f;
-            let dist = (dx * dx + dy * dy).sqrt();
-            let idx = ((y * sz + x) * 4) as usize;
-
-            if dist <= r {
-                let edge = r * 0.9;
-                if dist > edge {
-                    let alpha = 1.0 - (dist - edge) / (r - edge);
-                    rgba[idx] = 122;
-                    rgba[idx + 1] = 162;
-                    rgba[idx + 2] = 247;
-                    rgba[idx + 3] = (alpha * 255.0) as u8;
-                } else {
-                    rgba[idx] = 122;
-                    rgba[idx + 1] = 162;
-                    rgba[idx + 2] = 247;
-                    rgba[idx + 3] = 255;
-                }
-            } else {
-                rgba[idx + 3] = 0;
-            }
-        }
-    }
-
-    Icon::from_rgba(rgba, sz, sz).unwrap()
 }

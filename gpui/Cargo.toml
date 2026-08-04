@@ -8,12 +8,17 @@ license = "AGPL-3.0-or-later"
 [dependencies]
 mdict-rs = { path = ".." }
 dicto-telemetry = { path = "../telemetry" }
+dicto-translate = { path = "../translate" }
 gpui = { git = "https://github.com/zed-industries/zed", rev = "1d217ee39d381ac101b7cf49d3d22451ac1093fe" }
 gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "1d217ee39d381ac101b7cf49d3d22451ac1093fe" }
 gpui-component = { git = "https://github.com/longbridge/gpui-component", rev = "c112e7b482b6b9c53a8c43deaf5847b94a29ad82" }
 gpui-component-assets = { git = "https://github.com/longbridge/gpui-component", rev = "c112e7b482b6b9c53a8c43deaf5847b94a29ad82" }
 anyhow = "1.0"
-tray-icon = "0.24.0"
+# ashpd shares zbus with gpui_linux (which forces async-io), so we must use the
+# async-io feature too — enabling tokio would conflict. The `global_shortcuts`
+# feature gates the GlobalShortcuts portal module.
+ashpd = { version = "0.13", default-features = false, features = ["async-io", "global_shortcuts"] }
+ksni = { git = "https://github.com/mohamadkhani/ksni.git", tag = "v0.3.5-gnome-activation-token", features = ["tokio"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 rodio = { version = "0.20", default-features = false, features = ["mp3", "wav", "vorbis", "flac"] }
@@ -21,6 +26,12 @@ reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
+arboard = { version = "3", default-features = false, features = ["wayland-data-control"] }
+thiserror = "1"
+tokio = { version = "1", features = ["sync", "rt", "macros"] }
+global-hotkey = "0.5"
+zbus = "5"
+futures-util = "0.3"
 
 [build-dependencies]
 embed-resource = "3.0"

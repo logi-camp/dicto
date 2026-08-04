@@ -165,6 +165,67 @@ impl DictApp {
             });
         }
 
+        // Start periodic polling for quick-translate hotkey events and
+        // tray-menu triggers. Runs every 100ms while the app is alive.
+        let poll_state = state.clone();
+        cx.spawn(async move |_this, cx| {
+            loop {
+                cx.background_executor()
+                    .timer(Duration::from_millis(100))
+                    .await;
+
+                // Check the tray menu trigger flag
+                let tray_triggered = crate::TRAY_TRANSLATE_TRIGGERED
+                    .swap(false, std::sync::atomic::Ordering::Acquire);
+
+                // Check hotkey events and tray flag. `poll()` opens the popup
+                // for hotkey activations; the tray/IPC flag is a separate manual
+                // trigger. Both end up in an `Idle` state showing the selection
+                // + a Translate button — the translation only runs on click.
+                let triggered = cx.update_entity(&poll_state, |s, _cx| {
+                    if let Some(engine) = s.quick_translate_engine.as_mut() {
+                        let hotkey_fired = engine.poll();
+                        if hotkey_fired || tray_triggered {
+                            // `poll()` already opened the popup for hotkey events;
+                            // for the tray flag we trigger manually.
+                            if !hotkey_fired {
+                                engine.trigger_translate();
+                            }
+                            return engine.popup_status().is_visible();
+                        }
+                    }
+                    false
+                });
+
+                if triggered {
+                    // Open (or refresh) the popup window.
+                    let has_popup = cx.read_entity(&poll_state, |s, _cx| {
+                        matches!(
+                            s.quick_translate_engine
+                                .as_ref()
+                                .map(|e| e.popup_status()),
+                            Some(crate::quick_translate::PopupStatus::Visible(_))
+                        )
+                    });
+
+                    if has_popup {
+                        // Drain any tray-captured xdg-activation token so the
+                        // popup raises+focuses on GNOME/Mutter.
+                        let token = crate::take_tray_translate_token();
+                        let res = cx.update(|cx: &mut gpui::App| {
+                            open_translate_popup(&poll_state, token.as_deref(), cx)
+                        });
+                        if let Err(e) = res {
+                            tracing::error!(error = %e, "failed to open translate popup");
+                        }
+                    } else {
+                        tracing::info!("quick translate triggered but no popup opened");
+                    }
+                }
+            }
+        })
+        .detach();
+
         Self { state, input }
     }
 
@@ -298,6 +359,76 @@ impl Render for DictApp {
     }
 }
 
+/// Open (or refresh) the Quick Translate popup window.
+///
+/// The popup is a borderless `WindowKind::PopUp` that reads its content from
+/// the shared `DictState`'s `popup_status`, so once it exists we only need to
+/// notify it to re-render with the latest translation result.
+fn open_translate_popup(
+    state: &Entity<DictState>,
+    _activation_token: Option<&str>,
+    cx: &mut gpui::App,
+) -> anyhow::Result<()> {
+    use gpui::{Bounds, WindowBounds, WindowDecorations, WindowKind, WindowOptions, size};
+
+    // If a popup window already exists, raise+focus it.
+    //
+    // `activate_window()` brings the surface to the foreground at the platform
+    // level. Full LogiGuard-style raise+focus on GNOME/Mutter needs the
+    // compositor-minted xdg-activation token forwarded via
+    // Window::activate_with_token, but Dicto's current GPUI rev (zed
+    // 1d217ee) predates that method. The token plumbing is in place
+    // (crate::take_tray_translate_token); bumping GPUI to the mohamadkhani/zed
+    // fork (c612da6) would enable it — but that fork diverges enough to need a
+    // dedicated UI-layer migration.
+    if let Some(handle) = state.read(cx).qt_popup_window {
+        let _ = handle.update(cx, |_view, window, cx| {
+            window.activate_window();
+            cx.notify();
+        });
+        return Ok(());
+    }
+
+    // Center a 460×560 popup near the top of the screen. The window height
+    // matches the card's max_h so the window is never the clipping factor:
+    // short content shows a compact card, long content / expanded Options
+    // grows the card up to 560 and scrolls inside. Resizable as an escape hatch.
+    let bounds = Bounds::centered(None, size(px(460.), px(560.)), cx);
+    let state_for_window = state.clone();
+
+    let handle = cx.open_window(
+        WindowOptions {
+            window_bounds: Some(WindowBounds::Windowed(bounds)),
+            window_decorations: Some(WindowDecorations::Client),
+            titlebar: Some(gpui::TitlebarOptions {
+                title: Some("Dicto Translate".into()),
+                ..Default::default()
+            }),
+            kind: WindowKind::PopUp,
+            is_resizable: true,
+            is_minimizable: false,
+            focus: true,
+            show: true,
+            app_id: Some("dicto".into()),
+            ..Default::default()
+        },
+        |_window, cx| {
+            cx.new(|cx| {
+                crate::components::translate_popup::TranslatePopupView::new(
+                    state_for_window.clone(),
+                    cx,
+                )
+            })
+        },
+    )?;
+
+    state.update(cx, |s, _cx| {
+        s.qt_popup_window = Some(handle);
+    });
+
+    Ok(())
+}
+
 /// Slim progress bar shown while background indexing is running.
 /// Returns an empty fragment when `indexing_total == 0` so we don't
 /// reserve vertical space in the idle state.
@@ -419,11 +550,17 @@ fn cog_button(state: Entity<DictState>) -> gpui::AnyElement {
                                         cx,
                                     )
                                 } else if active_tab == 3 {
+                                    crate::components::quick_translate_panel::quick_translate_tab_content(
+                                        state.clone(),
+                                        window,
+                                        cx,
+                                    )
+                                } else if active_tab == 4 {
                                     crate::components::settings_panel::telemetry_tab_content(
                                         state.clone(),
                                         cx,
                                     )
-                                } else if active_tab == 4 {
+                                } else if active_tab == 5 {
                                     crate::components::about_panel::panel_content()
                                 } else {
                                     let is_importing =
